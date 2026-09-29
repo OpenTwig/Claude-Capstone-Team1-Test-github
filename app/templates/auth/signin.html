@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Log in · Stock Trading System{% endblock %}
+{% block content %}
+  <div class="row justify-content-center align-items-center flex-grow-1 login-page">
+    <div class="col-sm-9 col-md-6 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-body p-4">
+          <h1 class="h4 text-center mb-4">Login</h1>
+          {% if error %}
+            <div class="alert alert-danger" role="alert" data-login-error>{{ error }}</div>
+          {% endif %}
+          <form method="post" action="{{ url_for('auth.signin') }}" novalidate>
+            {{ form.csrf_token }}
+            <div class="mb-3">
+              {{ form.email.label(class="form-label") }}
+              {{ form.email(class="form-control" ~ (" is-invalid" if form.email.errors else ""), type="email", autocomplete="username", placeholder="Email") }}
+              {% for message in form.email.errors %}<div class="invalid-feedback">{{ message }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ form.password.label(class="form-label") }}
+              {{ form.password(class="form-control" ~ (" is-invalid" if form.password.errors else ""), autocomplete="current-password", placeholder="Password") }}
+              {% for message in form.password.errors %}<div class="invalid-feedback">{{ message }}</div>{% endfor %}
+            </div>
+            <div class="form-check mb-3">
+              {{ form.stay_signed_in(class="form-check-input") }}
+              {{ form.stay_signed_in.label(class="form-check-label") }}
+            </div>
+            <p class="text-body-secondary small text-center mb-4" data-first-login-note>New users will need to reset password upon first login.</p>
+            {{ form.submit(class="btn btn-primary w-100") }}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

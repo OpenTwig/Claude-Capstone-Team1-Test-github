@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% from "_pager.html" import pager %}
+{% block title %}Administration · Stock Trading System{% endblock %}
+
+{% macro error(form, name) -%}
+  {% set e = errors.get(form, {}) %}
+  {% if e.get(name) %}<div class="invalid-feedback d-block" data-error="{{ form }}:{{ name }}">{{ e[name] }}</div>{% endif %}
+{%- endmacro %}
+
+{% macro invalid(form, name) -%}{% if errors.get(form, {}).get(name) %} is-invalid{% endif %}{%- endmacro %}
+
+{% macro value(form, name, default="") -%}{{ forms.get(form, {}).get(name, default) }}{%- endmacro %}
+
+{% macro time_text(t) -%}{{ t.strftime("%I:%M %p").lstrip("0") }}{%- endmacro %}
+
+{% macro keep_pages() -%}
+  {# Both lists' pages, so the row action comes back to what was showing. #}
+  <input type="hidden" name="users_page" value="{{ user_page.page }}">
+  <input type="hidden" name="stocks_page" value="{{ stock_page.page }}">
+{%- endmacro %}
+
+{% macro users_href(n) -%}{{ url_for('admin.index', users_page=n, stocks_page=stock_page.page, _anchor='users') }}{%- endmacro %}
+{% macro stocks_href(n) -%}{{ url_for('admin.index', users_page=user_page.page, stocks_page=n, _anchor='stocks') }}{%- endmacro %}
+
+{% block content %}
+  <h1 class="h3 mb-3">Administration</h1>
+
+  {% if notice %}
+    {# A temporary password, shown this once (R3.4, R3.5, R18.9). It is not stored anywhere readable. #}
+    <div class="alert alert-warning" role="alert" data-temp-password-notice>
+      <p class="fw-semibold mb-1">{{ notice.title }}</p>
+      <p class="mb-1">Temporary password: <code class="fs-5 user-select-all" data-temp-password>{{ notice.password }}</code></p>
+      <p class="small mb-0">This is the only time it is shown. Give it to the user; they must choose a new password when they
+        log in, within {{ temp_days }} days.</p>
+    </div>
+  {% endif %}
+
+  <div class="row g-4 mb-4">
+    {# Add User (R3.1-R3.6, R3.9, D19). #}
+    <div class="col-lg-4">
+      <section class="card h-100" data-add-user>
+        <h2 class="card-header h5 mb-0">Add User</h2>
+        <form method="post" action="{{ url_for('admin.add_user') }}" class="card-body" novalidate data-role-form>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="user-name">Full Name</label>
+              <input class="form-control{{ invalid('add_user', 'name') }}" id="user-name" name="name" maxlength="255" value="{{ value('add_user', 'name') }}">
+              {{ error("add_user", "name") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="user-ssn">SSN</label>
+              {# Never refilled after an error: an entered SSN is not shown again anywhere (R3.6, D8). #}
+              <input class="form-control{{ invalid('add_user', 'ssn') }}" id="user-ssn" name="ssn" placeholder="XXX-XX-XXXX"
+                     inputmode="numeric" autocomplete="off" maxlength="11">
+              {{ error("add_user", "ssn") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="user-email">Email</label>
+              <input class="form-control{{ invalid('add_user', 'email') }}" id="user-email" name="email" type="email" maxlength="254"
+                     autocomplete="off" value="{{ value('add_user', 'email') }}">
+              {{ error("add_user", "email") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="user-dob">Date of Birth</label>
+              <input class="form-control{{ invalid('add_user', 'date_of_birth') }}" id="user-dob" name="date_of_birth"
+                     placeholder="MM/DD/YYYY" inputmode="numeric" value="{{ value('add_user', 'date_of_birth') }}">
+              {{ error("add_user", "date_of_birth") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="user-role">Role</label>
+              <select class="form-select{{ invalid('add_user', 'role') }}" id="user-role" name="role" data-role>
+                {% for r in roles %}<option{% if value('add_user', 'role', 'Customer') == r %} selected{% endif %}>{{ r }}</option>{% endfor %}
+              </select>
+              {{ error("add_user", "role") }}
+            </div>
+            {# Administrators only (D19); shown by admin.js when Administrator is chosen. #}
+            <div class="col-sm-6 col-lg-12 col-xl-6" data-admin-field{% if value('add_user', 'role') != "Administrator" %} hidden{% endif %}>
+              <label class="form-label" for="user-access">Access Level</label>
+              <input class="form-control{{ invalid('add_user', 'access_level') }}" id="user-access" name="access_level" maxlength="20"
+                     value="{{ value('add_user', 'access_level') }}">
+              {{ error("add_user", "access_level") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6" data-admin-field{% if value('add_user', 'role') != "Administrator" %} hidden{% endif %}>
+              <label class="form-label" for="user-department">Department <span class="text-body-secondary">(optional)</span></label>
+              <input class="form-control{{ invalid('add_user', 'department') }}" id="user-department" name="department" maxlength="100"
+                     value="{{ value('add_user', 'department') }}">
+              {{ error("add_user", "department") }}
+            </div>
+          </div>
+          <div class="d-flex justify-content-end mt-3">
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    {# Add Stocks (R14.2-R14.6, D16, A15). #}
+    <div class="col-lg-4">
+      <section class="card h-100" data-add-stock>
+        <h2 class="card-header h5 mb-0">Add Stocks</h2>
+        <form method="post" action="{{ url_for('admin.add_stock') }}" class="card-body" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="stock-name">Stock Name</label>
+              <input class="form-control{{ invalid('add_stock', 'company_name') }}" id="stock-name" name="company_name" maxlength="255"
+                     value="{{ value('add_stock', 'company_name') }}">
+              {{ error("add_stock", "company_name") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="stock-symbol">Stock Symbol</label>
+              <input class="form-control text-uppercase{{ invalid('add_stock', 'symbol') }}" id="stock-symbol" name="symbol" maxlength="10"
+                     autocomplete="off" value="{{ value('add_stock', 'symbol') }}">
+              {{ error("add_stock", "symbol") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="stock-price">Stock Price</label>
+              <div class="input-group has-validation">
+                <span class="input-group-text">$</span>
+                <input class="form-control{{ invalid('add_stock', 'price') }}" id="stock-price" name="price" inputmode="decimal"
+                       value="{{ value('add_stock', 'price') }}">
+              </div>
+              {{ error("add_stock", "price") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="stock-shares">Number of Shares</label>
+              <input class="form-control{{ invalid('add_stock', 'shares') }}" id="stock-shares" name="shares" inputmode="decimal"
+                     value="{{ value('add_stock', 'shares') }}">
+              {{ error("add_stock", "shares") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6">
+              <label class="form-label" for="stock-exchange">Exchange <span class="text-body-secondary">(optional)</span></label>
+              <input class="form-control{{ invalid('add_stock', 'exchange') }}" id="stock-exchange" name="exchange" maxlength="10"
+                     value="{{ value('add_stock', 'exchange') }}">
+              {{ error("add_stock", "exchange") }}
+            </div>
+            <div class="col-sm-6 col-lg-12 col-xl-6 d-flex align-items-end">
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="stock-randomize" name="randomize_history"
+                       {% if not forms.get("add_stock") or value("add_stock", "randomize_history") == "on" %}checked{% endif %}>
+                <label class="form-check-label" for="stock-randomize">Randomize History</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="stock-description">Stock Description <span class="text-body-secondary">(up to {{ description_max }} characters)</span></label>
+              <textarea class="form-control{{ invalid('add_stock', 'description') }}" id="stock-description" name="description" rows="2"
+                        maxlength="{{ description_max }}">{{ value('add_stock', 'description') }}</textarea>
+              {{ error("add_stock", "description") }}
+            </div>
+          </div>
+          <div class="d-flex justify-content-end mt-3">
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    {# Market Time: open and close times only, every trading day (R15.3-R15.5, D21). #}
+    <div class="col-lg-4">
+      <section class="card h-100" data-market-time>
+        <h2 class="card-header h5 mb-0">Market Time</h2>
+        <form method="post" action="{{ url_for('admin.save_schedule') }}" class="card-body" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <p class="small text-body-secondary" data-current-hours>
+            Now open {{ time_text(schedule.open_time) }} to {{ time_text(schedule.close_time) }} Arizona time, Monday to Friday, except market holidays.
+          </p>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label" for="open-time">Open Time</label>
+              <input class="form-control{{ invalid('schedule', 'open_time') }}" type="time" id="open-time" name="open_time"
+                     value="{{ value('schedule', 'open_time', schedule.open_time.strftime('%H:%M')) }}">
+              {{ error("schedule", "open_time") }}
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="close-time">Close Time</label>
+              <input class="form-control{{ invalid('schedule', 'close_time') }}" type="time" id="close-time" name="close_time"
+                     value="{{ value('schedule', 'close_time', schedule.close_time.strftime('%H:%M')) }}">
+              {{ error("schedule", "close_time") }}
+            </div>
+          </div>
+          <div class="d-flex justify-content-end mt-3">
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    {# Users and Stocks each get a full-width row (the user's choice; the wireframe has them side by side). #}
+    {# Users (R3.7, R3.10, R3.12, R18.9): no SSN column, not even the last 4 (D8). #}
+    <div class="col-12">
+      <section class="card" id="users" data-users>
+        <h2 class="card-header h5 mb-0">Users</h2>
+        <div class="table-responsive admin-list">
+          <table class="table table-sm align-middle mb-0 admin-table">
+            <thead>
+              <tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Date of Birth</th><th scope="col">Role</th>
+                <th scope="col" class="text-end">Actions</th></tr>
+            </thead>
+            <tbody>
+              {% for u in user_page.rows %}
+                {% set key = "user-" ~ u.user_id %}
+                {% set is_me = u.user_id == current_user.user_id %}
+                <tr data-user-row="{{ u.user_id }}"{% if not u.is_active %} class="text-body-secondary"{% endif %}>
+                  <td>{{ u.name }}{% if is_me %} <span class="badge text-bg-secondary">You</span>{% endif %}
+                    {% if not u.is_active %} <span class="badge text-bg-secondary" data-deactivated>Deactivated</span>{% endif %}</td>
+                  <td class="text-break">{{ u.email }}</td>
+                  <td>{{ u.date_of_birth.strftime("%m/%d/%Y") }}</td>
+                  <td>{{ u.role }}</td>
+                  <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#edit-{{ key }}"
+                            aria-expanded="{{ 'true' if editing == key else 'false' }}" aria-controls="edit-{{ key }}">Edit</button>
+                    {% if not is_me and u.is_active %}
+                      <form method="post" action="{{ url_for('admin.issue_temporary_password', user_id=u.user_id) }}" class="d-inline"
+                            data-confirm="Give {{ u.name }} a new temporary password? Their current password stops working and they are logged out.">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{{ keep_pages() }}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">New temp password</button>
+                      </form>
+                      <form method="post" action="{{ url_for('admin.deactivate_user', user_id=u.user_id) }}" class="d-inline"
+                            data-confirm="Deactivate {{ u.name }}? They won't be able to log in. Their records are kept.">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{{ keep_pages() }}
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Deactivate</button>
+                      </form>
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr class="collapse{% if editing == key %} show{% endif %}" id="edit-{{ key }}">
+                  <td colspan="5" class="bg-body-tertiary">
+                    {# Name, email, and date of birth only: never the SSN or role (R3.12, D20). #}
+                    <form method="post" action="{{ url_for('admin.edit_user', user_id=u.user_id) }}" class="row g-2 align-items-end" novalidate data-edit-user>
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{{ keep_pages() }}
+                      <div class="col-md-4">
+                        <label class="form-label small" for="{{ key }}-name">Full Name</label>
+                        <input class="form-control form-control-sm{{ invalid(key, 'name') }}" id="{{ key }}-name" name="name" maxlength="255"
+                               value="{{ value(key, 'name', u.name) }}">
+                        {{ error(key, "name") }}
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label small" for="{{ key }}-email">Email</label>
+                        <input class="form-control form-control-sm{{ invalid(key, 'email') }}" id="{{ key }}-email" name="email" maxlength="254"
+                               value="{{ value(key, 'email', u.email) }}">
+                        {{ error(key, "email") }}
+                      </div>
+                      <div class="col-md-2">
+                        <label class="form-label small" for="{{ key }}-dob">Date of Birth</label>
+                        <input class="form-control form-control-sm{{ invalid(key, 'date_of_birth') }}" id="{{ key }}-dob" name="date_of_birth"
+                               value="{{ value(key, 'date_of_birth', u.date_of_birth.strftime('%m/%d/%Y')) }}">
+                        {{ error(key, "date_of_birth") }}
+                      </div>
+                      <div class="col-md-2 d-grid">
+                        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                      </div>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {{ pager(user_page, user_page_numbers, "Users list", "users", users_href, "card-footer") }}
+      </section>
+    </div>
+
+    {# Stocks (R14.7-R14.9, D16, D20). #}
+    <div class="col-12">
+      <section class="card" id="stocks" data-stocks>
+        <h2 class="card-header h5 mb-0">Stocks</h2>
+        {% if not stock_page.rows %}
+          <p class="card-body text-body-secondary mb-0">No stocks yet. Add one above.</p>
+        {% else %}
+          <div class="table-responsive admin-list">
+            <table class="table table-sm align-middle mb-0 admin-table">
+              <thead>
+                <tr><th scope="col">Name</th><th scope="col">Symbol</th><th scope="col" class="text-end">Price</th>
+                  <th scope="col" class="text-end">Change %</th><th scope="col" class="text-end">Shares available</th>
+                  <th scope="col" class="text-end">Actions</th></tr>
+              </thead>
+              <tbody>
+                {% for row in stock_page.rows %}
+                  {% set s = row.stock %}
+                  {% set key = "stock-" ~ s.issuer_id %}
+                  <tr data-stock-row="{{ s.symbol }}"{% if not s.is_listed %} class="text-body-secondary"{% endif %}>
+                    <td>{{ s.company_name }}{% if not s.is_listed %} <span class="badge text-bg-secondary" data-delisted>Delisted</span>{% endif %}</td>
+                    <td>{{ s.symbol }}</td>
+                    <td class="text-end">{{ s.current_price | money }}</td>
+                    <td class="text-end">{{ "+" if row.change_pct > 0 }}{{ row.change_pct }}%</td>
+                    <td class="text-end">{{ s.shares_available | shares }}</td>
+                    <td class="text-end text-nowrap">
+                      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#edit-{{ key }}"
+                              aria-expanded="{{ 'true' if editing == key else 'false' }}" aria-controls="edit-{{ key }}">Edit</button>
+                      {% if s.is_listed %}
+                        <form method="post" action="{{ url_for('admin.delist_stock', issuer_id=s.issuer_id) }}" class="d-inline"
+                              data-confirm="Delist {{ s.symbol }}? It disappears from search and can't be bought. Customers who hold it can still sell. This can't be undone.">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{{ keep_pages() }}
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Delist</button>
+                        </form>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr class="collapse{% if editing == key %} show{% endif %}" id="edit-{{ key }}">
+                    <td colspan="6" class="bg-body-tertiary">
+                      {# Name, description, and exchange only: never the symbol or price (R14.8, D20). #}
+                      <form method="post" action="{{ url_for('admin.edit_stock', issuer_id=s.issuer_id) }}" class="row g-2 align-items-end" novalidate data-edit-stock>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{{ keep_pages() }}
+                        <div class="col-md-4">
+                          <label class="form-label small" for="{{ key }}-name">Stock Name</label>
+                          <input class="form-control form-control-sm{{ invalid(key, 'company_name') }}" id="{{ key }}-name" name="company_name"
+                                 maxlength="255" value="{{ value(key, 'company_name', s.company_name) }}">
+                          {{ error(key, "company_name") }}
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label small" for="{{ key }}-description">Description</label>
+                          <input class="form-control form-control-sm{{ invalid(key, 'description') }}" id="{{ key }}-description" name="description"
+                                 maxlength="{{ description_max }}" value="{{ value(key, 'description', s.description or '') }}">
+                          {{ error(key, "description") }}
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label small" for="{{ key }}-exchange">Exchange</label>
+                          <input class="form-control form-control-sm{{ invalid(key, 'exchange') }}" id="{{ key }}-exchange" name="exchange"
+                                 maxlength="10" value="{{ value(key, 'exchange', s.exchange or '') }}">
+                          {{ error(key, "exchange") }}
+                        </div>
+                        <div class="col-md-2 d-grid">
+                          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {{ pager(stock_page, stock_page_numbers, "Stocks list", "stocks", stocks_href, "card-footer") }}
+        {% endif %}
+      </section>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

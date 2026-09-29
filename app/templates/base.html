@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Stock Trading System{% endblock %}</title>
+  {# Before the stylesheets, so a saved light/dark choice applies before anything is drawn (D13). #}
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="d-flex flex-column min-vh-100">
+  <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom app-navbar d-print-none">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/"><span class="app-logo">LOGO</span></a>
+      {% if current_user.is_authenticated %}
+        {# Page order follows the wireframes (R2.1-R2.3). Administrators don't trade, so their
+           menu is Stocks, Administration, and History (D19). #}
+        {% if current_user.is_admin %}
+          {% set pages = [("Stocks", "/stocks"), ("Administration", "/admin"), ("History", "/history")] %}
+        {% else %}
+          {% set pages = [("Account", "/account"), ("Positions", "/positions"), ("Trade", "/trade"),
+                          ("Transfer Funds", "/transfer"), ("Stocks", "/stocks"), ("History", "/history")] %}
+        {% endif %}
+        {# Until a temporary password is replaced, only Log out works (R18.3), so hide the page links. #}
+        {% if current_user.must_change_password %}{% set pages = [] %}{% endif %}
+        {# Phones: the theme button sits in the top bar next to the menu button (D13). #}
+        {% with theme_button_class = "d-lg-none ms-auto me-3 px-2" %}{% include "_theme_button.html" %}{% endwith %}
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#main-nav"
+                aria-controls="main-nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="main-nav">
+          <ul class="navbar-nav me-auto">
+            {% for label, path in pages %}
+              {% set current = request.path == path or request.path.startswith(path ~ "/") %}
+              <li class="nav-item">
+                <a class="nav-link{% if current %} active{% endif %}" href="{{ path }}"{% if current %} aria-current="page"{% endif %}>{{ label }}</a>
+              </li>
+            {% endfor %}
+          </ul>
+          <ul class="navbar-nav align-items-lg-center">
+            {# Wider screens: just left of Profile (user feedback). Hidden in the phone menu. #}
+            <li class="nav-item d-none d-lg-block">
+              {% with theme_button_class = "" %}{% include "_theme_button.html" %}{% endwith %}
+            </li>
+            <li class="nav-item dropdown">
+              <button class="nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Profile</button>
+              <div class="dropdown-menu dropdown-menu-end profile-menu">
+                <div class="px-3 py-1">
+                  <div class="fw-semibold" data-profile="name">{{ current_user.name }}</div>
+                  <div class="text-body-secondary small" data-profile="email">{{ current_user.email }}</div>
+                  {% if current_user.is_admin %}
+                    <div class="small mt-1" data-profile="access-level">Access level: {{ current_user.access_level }}</div>
+                    <div class="small" data-profile="department">Department: {{ current_user.department or "—" }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </li>
+            <li class="nav-item">
+              <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="nav-link">Log out</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+      {% else %}
+        <span class="navbar-text me-auto ms-2 fs-5">Stock Trading System</span>
+        {% with theme_button_class = "" %}{% include "_theme_button.html" %}{% endwith %}
+      {% endif %}
+    </div>
+  </nav>
+
+  <main class="container py-4 flex-grow-1 d-flex flex-column">
+    {% if prices_stale %}
+      <div class="alert alert-warning py-2" role="status" data-prices-stale>Prices may be delayed</div>
+    {% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

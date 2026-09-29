@@ -1,0 +1,35 @@
+# The random price generator (task 6.1; R16, D12, D28). Exactly one runs: a second copy exits at once
+# because the MySQL named lock is taken. Install to /etc/systemd/system/, then:
+#   systemctl enable --now trading-price-generator
+
+[Unit]
+Description=Stock Trading System price generator
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trading
+Group=trading
+WorkingDirectory=/opt/trading
+EnvironmentFile=/etc/trading/trading.env
+# Never read a .env file in production: all settings come from the file above.
+Environment=FLASK_SKIP_DOTENV=1
+ExecStart=/opt/trading/.venv/bin/flask --app app price-generator
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

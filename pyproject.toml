@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+filterwarnings = [
+    # Flask-Login 0.6.3 calls datetime.utcnow() internally (deprecated in Python 3.12+); not our code.
+    "ignore:datetime.datetime.utcnow:DeprecationWarning:flask_login",
+]
+markers = [
+    "db: needs the local MySQL test database (deselect with -m \"not db\")",
+]

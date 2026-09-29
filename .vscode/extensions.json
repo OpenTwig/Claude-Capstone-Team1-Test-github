@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.debugpy",
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-mysql",
+    "bierner.markdown-mermaid"
+  ]
+}

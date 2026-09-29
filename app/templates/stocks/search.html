@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "stocks/_macros.html" import panel, stock_list, search_form, chart_data %}
+{% block title %}Stocks · Stock Trading System{% endblock %}
+
+{% block content %}
+  <h1 class="h3 mb-3 text-center">Stock Search</h1>
+  {{ search_form(query, search_max, error) }}
+
+  {% if results is not none %}
+    {# R7.1-R7.2; the panels stay below the results. #}
+    <section class="card mb-4 stock-results mx-auto" data-results>
+      <h2 class="card-header h6 mb-0">Results for "{{ query }}"</h2>
+      {{ stock_list(results, 'No stocks found matching "' ~ query ~ '"') }}
+    </section>
+  {% endif %}
+
+  {# Top Gainers and Trending (A14, D18); Most Active and Top Losers are left out (D5). #}
+  <div class="row justify-content-center gx-lg-5">
+    <div class="col-md-6 col-xl-4">{{ panel("Top gainers", gainers, "No stocks yet.", "gainers") }}</div>
+    <div class="col-md-6 col-xl-4">{{ panel("Trending stocks", trending, "No trades yet today.", "trending") }}</div>
+  </div>
+  {{ chart_data(chart) }}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/stocks.js') }}"></script>
+{% endblock %}

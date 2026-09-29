@@ -1,0 +1,7 @@
+# Vendored libraries are checked against SHA-256 hashes (app/static/vendor/VERSIONS.md),
+# so git must never rewrite their line endings.
+app/static/vendor/** -text
+
+# Binary files
+*.png binary
+*.docx binary

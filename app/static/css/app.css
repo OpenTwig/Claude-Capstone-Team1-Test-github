@@ -1,0 +1,170 @@
+/* Project styles on top of Bootstrap. Keep this small; prefer Bootstrap classes.
+   Sizes are relative (rem, %, vh/vw, Bootstrap variables), never px, so the site
+   scales with the user's text size and screen (D9). tests/test_app_shell.py checks this. */
+
+.app-navbar {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.app-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border: var(--bs-border-width) solid var(--bs-border-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Theme button (D13): the sun shows in dark mode (click for light), the moon in light mode.
+   Spacing comes from Bootstrap's .nav-link, and centring from d-inline-flex + align-items-center. */
+.theme-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+[data-bs-theme="dark"] .theme-icon-moon,
+[data-bs-theme="light"] .theme-icon-sun {
+  display: none;
+}
+
+.profile-menu {
+  min-width: 16rem;
+}
+
+/* The login card sits in the middle of the space below the navigation bar. */
+.login-page {
+  padding-bottom: 4rem; /* visually centred: nudges the card a little above true centre */
+}
+
+/* Stocks pages (wf-1). Chart.js sizes each canvas to fill its box, so the boxes set the size. */
+.stock-search,
+.stock-results {
+  max-width: 50rem;
+}
+
+.sparkline {
+  position: relative;
+  flex: 0 0 auto;
+  width: 5rem;
+  height: 2rem;
+}
+
+.price-chart {
+  position: relative;
+  height: 20rem;
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
+/* The table sits on the page background, not Bootstrap's table colour, in both themes. */
+.stock-facts {
+  --bs-table-bg: transparent;
+}
+
+/* Trade page (wf-2). */
+.symbol-input {
+  max-width: 22rem;
+}
+
+.order-page {
+  max-width: 40rem;
+}
+
+.quote-facts,
+.order-card .table {
+  --bs-table-bg: transparent;
+}
+
+/* Summary and Positions (wf-3, wf-4). */
+.value-chart {
+  position: relative;
+  height: 18rem;
+}
+
+.summary-table,
+.positions-table {
+  --bs-table-bg: transparent;
+}
+
+.positions-table td,
+.positions-table th {
+  white-space: nowrap;
+}
+
+/* Every digit the same width, so right-aligned numbers line up down each column. */
+.positions-table,
+.summary-table {
+  font-variant-numeric: tabular-nums;
+}
+
+.table-group-row th {
+  background-color: var(--bs-tertiary-bg);
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+/* History (wf-8). */
+.print-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.history-table {
+  --bs-table-bg: transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Printing (R13.5): black on white, whatever the theme; the nav bar and filters carry d-print-none. */
+@media print {
+  :root,
+  [data-bs-theme="dark"] {
+    --bs-body-bg: #fff;
+    --bs-body-color: #000;
+    --bs-emphasis-color: #000;
+    --bs-border-color: #999;
+    --bs-secondary-color: #333;
+  }
+
+  .alert {
+    display: none;
+  }
+
+  /* Use the whole sheet, and let the table grow instead of scrolling sideways (it can't scroll on paper). */
+  .container {
+    max-width: none;
+    padding: 0;
+  }
+
+  .table-responsive {
+    overflow: visible;
+  }
+
+  .history-table {
+    font-size: 0.8rem;
+  }
+
+  .history-table tr {
+    break-inside: avoid;
+  }
+}
+
+@page {
+  margin: 1.5cm;
+}
+
+/* Administration (wf-6): long lists scroll inside their card, as in the wireframe. */
+.admin-list {
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+.admin-table {
+  --bs-table-bg: transparent;
+}

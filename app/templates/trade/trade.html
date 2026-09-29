@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Trade · Stock Trading System{% endblock %}
+
+{% macro field_error(name) -%}
+  {% if errors.get(name) %}<div class="invalid-feedback d-block" data-error="{{ name }}">{{ errors[name] }}</div>{% endif %}
+{%- endmacro %}
+
+{% macro invalid(name) -%}{% if errors.get(name) %} is-invalid{% endif %}{%- endmacro %}
+
+{% block content %}
+  <h1 class="h3 mb-3">Trade Ticket</h1>
+
+  {% if not portfolio %}
+    <div class="alert alert-info" role="alert" data-no-portfolio>You don't have a portfolio yet.
+      <a href="{{ url_for('account.summary') }}" class="alert-link">Open one from your Account page</a> first.</div>
+  {% else %}
+    {# Portfolio selector and Available Cash (R8.1). Changing it reloads the page for that portfolio. #}
+    <form method="get" action="{{ url_for('trade.trade_page') }}" class="d-flex flex-wrap align-items-center gap-3 mb-4" data-portfolio-form>
+      {% if symbol %}<input type="hidden" name="symbol" value="{{ symbol }}">{% endif %}
+      <label class="visually-hidden" for="portfolio">Portfolio</label>
+      <select class="form-select w-auto" id="portfolio" name="portfolio">
+        {% for p in portfolios %}
+          <option value="{{ p.portfolio_id }}"{% if p.portfolio_id == portfolio.portfolio_id %} selected{% endif %}>{{ p.account_name }} {{ p.masked_account_number }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-outline-secondary" data-portfolio-go>Show</button>
+      <span>Available Cash: <span class="fw-semibold" data-cash>{{ portfolio.cash_balance | money }}</span></span>
+    </form>
+
+    {% if errors.get("form") %}
+      <div class="alert alert-danger" role="alert" data-error="form">{{ errors["form"] }}</div>
+    {% endif %}
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="row g-4">
+          <div class="col-lg-7">
+            {# Step 1: the symbol (R8.2). Without JavaScript this reloads the page with the quote. #}
+            <form method="get" action="{{ url_for('trade.trade_page') }}" class="mb-3" data-symbol-form novalidate>
+              <input type="hidden" name="portfolio" value="{{ portfolio.portfolio_id }}">
+              <label class="form-label" for="symbol">Symbol</label>
+              <div class="input-group has-validation symbol-input">
+                <input class="form-control text-uppercase{{ invalid('symbol') }}" id="symbol" name="symbol" value="{{ symbol }}"
+                       placeholder="Enter Symbol" maxlength="10" autocomplete="off" autocapitalize="characters" required>
+                <button class="btn btn-outline-secondary" type="submit">Look up</button>
+              </div>
+              <div class="invalid-feedback d-block" data-error="symbol">{{ errors.get("symbol", "") }}</div>
+            </form>
+            <p class="small mb-0" data-history-wrap{% if not history %} hidden{% endif %}>
+              <span class="text-body-secondary">Search History:</span>
+              <span data-history>
+                {% for s in history %}
+                  <a href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=s) }}" class="me-2" data-history-symbol>{{ s }}</a>
+                {% endfor %}
+              </span>
+            </p>
+          </div>
+
+          {# The quote (R8.2, R9.1): name, price, change since the previous close, market status, shares owned. No Bid/Ask (D17). #}
+          <div class="col-lg-5" data-quote{% if not quote %} hidden{% endif %}>
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <h2 class="h5 mb-1" data-quote-name>{% if quote %}{{ quote.company_name }} ({{ quote.symbol }}){% endif %}</h2>
+              <span class="badge {% if quote and quote.market.is_open %}text-bg-success{% else %}text-bg-secondary{% endif %}" data-market>{{ market_text or "" }}</span>
+            </div>
+            <p class="fs-4 fw-semibold mb-2" data-quote-price>{% if quote %}{{ quote.price | money }}{% endif %}</p>
+            <table class="table table-sm mb-0 quote-facts">
+              <tbody>
+                <tr><th scope="row" class="fw-normal text-body-secondary">Change since close</th>
+                  <td class="text-end" data-quote-change>{{ change_text or "" }}</td></tr>
+                <tr><th scope="row" class="fw-normal text-body-secondary">Shares owned</th>
+                  <td class="text-end" data-quote-owned>{% if quote %}{{ (quote.shares_owned or 0) | shares }}{% endif %}</td></tr>
+                <tr><th scope="row" class="fw-normal text-body-secondary">Market value</th>
+                  <td class="text-end" data-quote-value>{% if quote %}{{ market_value | money }}{% endif %}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# Step 2: the ticket (R8.3, R9.2), shown once a quote is on screen (wf-2, second state). #}
+        <form method="post" action="{{ url_for('trade.preview') }}" class="mt-4" data-ticket data-submit-once novalidate{% if not quote %} hidden{% endif %}>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="portfolio" value="{{ portfolio.portfolio_id }}">
+          <input type="hidden" name="symbol" value="{{ symbol }}" data-ticket-symbol>
+          <div class="row g-3">
+            <div class="col-sm-6 col-lg-3">
+              <label class="form-label" for="action">Action</label>
+              <select class="form-select{{ invalid('action') }}" id="action" name="action">
+                <option value="">Select Action</option>
+                {# Sell is greyed out until the portfolio holds some of this stock (R9.1). The server checks again (R9.4). #}
+                <option{% if values.get("action") == "Buy" %} selected{% endif %}>Buy</option>
+                <option value="Sell" data-sell{% if not can_sell %} disabled{% elif values.get("action") == "Sell" %} selected{% endif %}>Sell</option>
+              </select>
+              {{ field_error("action") }}
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <label class="form-label" for="unit">Unit</label>
+              <select class="form-select{{ invalid('unit') }}" id="unit" name="unit" data-unit>
+                {% for u in units %}<option{% if values.get("unit") == u %} selected{% endif %}>{{ u }}</option>{% endfor %}
+              </select>
+              {{ field_error("unit") }}
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <label class="form-label" for="amount">Amount</label>
+              <div class="input-group has-validation">
+                <span class="input-group-text" data-amount-prefix>{{ "Shares" if values.get("unit") == "Shares" else "$" }}</span>
+                <input class="form-control{{ invalid('amount') }}" id="amount" name="amount" inputmode="decimal" autocomplete="off"
+                       placeholder="Insert Amount" value="{{ values.get('amount', '') }}">
+              </div>
+              {{ field_error("amount") }}
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="row g-3">
+                <div class="col-6 col-sm-12 col-xl-6">
+                  <label class="form-label" for="order_type">Order Type</label>
+                  <select class="form-select{{ invalid('order_type') }}" id="order_type" name="order_type">
+                    {% for o in order_types %}<option>{{ o }}</option>{% endfor %}
+                  </select>
+                  {{ field_error("order_type") }}
+                </div>
+                <div class="col-6 col-sm-12 col-xl-6">
+                  <label class="form-label" for="timing">Timing</label>
+                  <select class="form-select{{ invalid('timing') }}" id="timing" name="timing">
+                    {% for t in timings %}<option>{{ t }}</option>{% endfor %}
+                  </select>
+                  {{ field_error("timing") }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <a class="btn btn-outline-secondary" href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id) }}">Clear</a>
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  {# Legal Information: collapsed, placeholder text (design: Page notes). #}
+  <div class="accordion" id="legal">
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#legal-text"
+                aria-expanded="false" aria-controls="legal-text">Legal Information</button>
+      </h2>
+      <div id="legal-text" class="accordion-collapse collapse" data-bs-parent="#legal">
+        <div class="accordion-body small text-body-secondary">
+          This is a stock trading simulator for a class project. Prices are generated at random and are not real
+          market data. No real money or securities are involved, and nothing here is investment advice. Orders are
+          Market orders for the current day and fill at once at the price when you confirm.
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/trade.js') }}"></script>
+{% endblock %}

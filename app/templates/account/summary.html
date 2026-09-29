@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% from "account/_macros.html" import signed, stat, value_chart, more_info, definitions, chart_data %}
+{% block title %}Account · Stock Trading System{% endblock %}
+
+{% macro field_error(name) -%}
+  {% if form_errors.get(name) %}<div class="invalid-feedback d-block" data-error="{{ name }}">{{ form_errors[name] }}</div>{% endif %}
+{%- endmacro %}
+
+{% block content %}
+  {% set t = summary.totals %}
+  <h1 class="h3 mb-3">Summary</h1>
+
+  {# Total Value across every portfolio (R5.1) and the value over time (R5.2, D23). #}
+  <section class="card mb-4" data-total-value>
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <h2 class="h5 mb-3">Total Value</h2>
+        {{ more_info("summary-info") }}
+      </div>
+      <div class="row g-4">
+        {% call stat("Total Value", "total") %}{{ t.total_value | money }}{% endcall %}
+        {% call stat("Day Change", "day") %}{{ signed(t.day_change, t.day_change_pct) }}{% endcall %}
+        {% call stat("Year to date Change", "ytd") %}{{ signed(t.ytd_change, t.ytd_change_pct) }}{% endcall %}
+      </div>
+      {{ definitions("summary-info") }}
+      {% if summary.rows %}{{ value_chart("Total value over time") }}{% endif %}
+    </div>
+  </section>
+
+  {# Portfolios (R5.3-R5.6) and Create Portfolio (R4, A11). #}
+  <section class="card mb-4" data-portfolios>
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <h2 class="h5 mb-0">Portfolios</h2>
+      <div class="d-flex flex-wrap gap-2">
+        {% if summary.rows %}
+          <form method="get" action="{{ url_for('account.summary') }}" role="search" data-portfolio-search>
+            <label class="visually-hidden" for="portfolio-search">Search portfolios</label>
+            <input class="form-control form-control-sm" type="search" id="portfolio-search" name="q" value="{{ query }}"
+                   placeholder="Search" autocomplete="off" maxlength="100">
+          </form>
+        {% endif %}
+        <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#create-portfolio"
+                aria-expanded="{{ 'true' if open_form else 'false' }}" aria-controls="create-portfolio">Create Portfolio</button>
+      </div>
+    </div>
+
+    <div class="collapse{% if open_form %} show{% endif %}" id="create-portfolio">
+      <form method="post" action="{{ url_for('account.create_portfolio') }}" class="card-body border-bottom" novalidate data-create-portfolio>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label" for="account_name">Account Name</label>
+            <input class="form-control{% if form_errors.get('account_name') %} is-invalid{% endif %}" id="account_name" name="account_name"
+                   maxlength="100" value="{{ form_values.get('account_name', '') }}" placeholder="e.g. Retirement">
+            {{ field_error("account_name") }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="account_type">Account Type</label>
+            <select class="form-select{% if form_errors.get('account_type') %} is-invalid{% endif %}" id="account_type" name="account_type">
+              {% for type in account_types %}<option{% if form_values.get("account_type") == type %} selected{% endif %}>{{ type }}</option>{% endfor %}
+            </select>
+            {{ field_error("account_type") }}
+          </div>
+          <div class="col-md-3 d-grid">
+            <button type="submit" class="btn btn-primary">Create</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    {% if not summary.rows %}
+      <div class="card-body" data-empty>
+        <p class="mb-0">You don't have a portfolio yet. Create one above, then add cash from
+          <a href="{{ url_for('transfer.transfer_page') }}">Transfer Funds</a> to start trading.</p>
+      </div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 summary-table">
+          <thead>
+            <tr>
+              <th scope="col">Account Name</th>
+              <th scope="col">Type</th>
+              <th scope="col" class="text-end">Cash</th>
+              <th scope="col" class="text-end">Account Value</th>
+              <th scope="col" class="text-end">Day Change</th>
+              <th scope="col" class="text-end">YTD Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              {% set p, v = r.portfolio, r.totals %}
+              {# The whole row opens Positions (account.js); the name stays a real link for keyboards and screen readers. #}
+              <tr data-portfolio-row data-search="{{ p.account_name }} {{ p.account_type }} {{ p.masked_account_number }}"
+                  data-href="{{ url_for('account.positions_page', portfolio=p.portfolio_id) }}" class="clickable-row">
+                <td>
+                  <a href="{{ url_for('account.positions_page', portfolio=p.portfolio_id) }}" class="fw-semibold">{{ p.account_name }}</a>
+                  <div class="small text-body-secondary">{{ p.masked_account_number }}</div>
+                </td>
+                <td>{{ p.account_type }}</td>
+                <td class="text-end">{{ v.cash | money }}</td>
+                <td class="text-end" data-account-value>{{ v.total_value | money }}</td>
+                <td class="text-end">{{ signed(v.day_change, v.day_change_pct) }}</td>
+                <td class="text-end">{{ signed(v.ytd_change, v.ytd_change_pct) }}</td>
+              </tr>
+            {% endfor %}
+            <tr data-no-match{% if rows %} hidden{% endif %}>
+              <td colspan="6" class="text-body-secondary">No portfolios match "{{ query }}".</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            {# Investments Total: every portfolio, whatever the search shows (R5.4). #}
+            <tr class="fw-semibold" data-investments-total>
+              <th scope="row" colspan="2">Investments Total</th>
+              <td class="text-end">{{ t.cash | money }}</td>
+              <td class="text-end">{{ t.total_value | money }}</td>
+              <td class="text-end">{{ signed(t.day_change, t.day_change_pct) }}</td>
+              <td class="text-end">{{ signed(t.ytd_change, t.ytd_change_pct) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    {% endif %}
+  </section>
+  {% if summary.rows %}{{ chart_data(chart) }}{% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/account.js') }}"></script>
+{% endblock %}

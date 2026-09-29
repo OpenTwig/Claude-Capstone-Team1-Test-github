@@ -1,0 +1,9 @@
+# Development and test dependencies, pinned from pip freeze.
+-r requirements.txt
+colorama==0.4.6; sys_platform == "win32"
+hypothesis==6.168.3
+iniconfig==2.3.0
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1
+sortedcontainers==2.4.0

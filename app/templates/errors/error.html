@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · Stock Trading System{% endblock %}
+{% block content %}
+  <div class="py-5 text-center">
+    <p class="text-body-secondary mb-1">Error {{ status }}</p>
+    <h1 class="h3">{{ title }}</h1>
+    <p class="lead">{{ message }}</p>
+    <a class="btn btn-primary" href="/">Go to the home page</a>
+  </div>
+{% endblock %}
