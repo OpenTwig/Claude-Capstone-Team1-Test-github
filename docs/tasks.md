@@ -410,6 +410,7 @@ Things discovered while working that the next person or AI session would otherwi
 - 2026-09-28 · python-dotenv: `load_dotenv()` with no path searches from the *calling file's* directory, not the working directory. `create_app()` uses `find_dotenv(usecwd=True)` so a `.env` is only picked up from where the command runs, which keeps tests run from a temporary directory isolated from a developer's real `.env`.
 - 2026-10-18 · MySQL `CHECK (col IN ('Open', 'Closed'))` is case-insensitive under the default `utf8mb4_0900_ai_ci` collation, so `'open'` passes. When the app must read the value back exactly, give the column `COLLATE utf8mb4_bin` (migration 010).
 - 2026-10-18 · The database tests take `DB_USER`/`DB_PASSWORD` from the developer's `.env`. With `DB_USER` set to an administrator account (e.g. `trading_admin`), the 12 `test_schema` checks that the app account is refused things fail; point `DB_USER` at `trading_app` before a checkpoint run.
+- 2026-10-18 · Repository moved from Gitea to GitHub with a fresh history: one "initial push" commit (`60c549d`) holds everything built before. Commit hashes in Done lines older than that (e.g. `28dab09`) belong to the old Gitea repository and don't exist on GitHub. A container cloned from Gitea needs the one-time switch in `docs/deployment.md` step 12.
 
 ---
 

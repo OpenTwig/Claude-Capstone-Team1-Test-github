@@ -55,7 +55,7 @@ Run from the repo root. All use the venv's interpreter.
   - **Summary**: one line, imperative mood, under ~70 characters (e.g. "Add buy-order validation").
   - **Description**: after a blank line, explain what changed and why, listing the main changes as bullets when there are several. Cite requirement IDs where relevant (e.g. R8.4).
 - Commit directly on `main`; do not create feature branches unless asked. (A separate production branch may be added later.)
-- **Never rewrite pushed history.** The user pushes to the Gitea remote (`origin`) themselves, sometimes mid-session. Before any amend, rebase, or reset of existing commits, run `git fetch` and `git status -sb`; if the commit is already on `origin`, make a new commit instead.
+- **Never rewrite pushed history.** The user pushes to the GitHub remote (`origin`, `github.com/OpenTwig/Claude-Capstone-Team1-Test-github`; moved from Gitea on 2026-10-18) themselves, sometimes mid-session. Before any amend, rebase, or reset of existing commits, run `git fetch` and `git status -sb`; if the commit is already on `origin`, make a new commit instead.
 - **Never push without explicit permission.** That covers `git push` of any kind (including tags and new branches) and anything else that publishes to the remote, such as opening a pull request. Ask every time; permission for one push does not carry over to the next.
 
 ## Security rules (apply to every change)

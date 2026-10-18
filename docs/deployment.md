@@ -7,7 +7,7 @@ Replace these placeholders everywhere:
 | Placeholder | Meaning |
 |---|---|
 | `trading.example.com` | the public hostname you'll use, on a domain in your Cloudflare account |
-| `<gitea-token>` | a Gitea access token that can read the repository |
+| `<github-token>` | only if the GitHub repository is private: a fine-grained personal access token with read-only **Contents** access to it, typed as the password when git asks |
 
 > **Run every command in a root shell inside the container.** If you log in as a normal user, start with `sudo -i`: the prompt changes to `root@…#`. Don't put `sudo` in front of single lines. A line like `sudo MIGRATE_PW=…` fails, and the next lines then run as your own user; in particular, Ubuntu's MySQL only lets the system's root user in without a password.
 
@@ -101,8 +101,7 @@ useradd --system --no-create-home --shell /usr/sbin/nologin trading
 ## 4. Get the code
 
 ```bash
-git clone https://thor10129:<gitea-token>@gitea.seam-co.net/thor10129/claude_capstone_test_site.git /opt/trading
-git -C /opt/trading remote set-url origin https://gitea.seam-co.net/thor10129/claude_capstone_test_site.git   # don't keep the token in the config
+git clone https://github.com/OpenTwig/Claude-Capstone-Team1-Test-github.git /opt/trading   # private repo: your GitHub username, then <github-token> as the password
 python3.14 -m venv /opt/trading/.venv
 /opt/trading/.venv/bin/pip install --upgrade pip
 /opt/trading/.venv/bin/pip install -r /opt/trading/requirements.txt
@@ -329,7 +328,22 @@ systemctl restart trading-web trading-price-generator
 curl -s http://127.0.0.1:8000/health
 ```
 
-Before a big update, take a Proxmox snapshot of the container (**Snapshots** → **Take Snapshot**), so you can roll back in one click.
+Before a big update, take a Proxmox snapshot of the container (**Snapshots** → **Take Snapshot**), so you can roll back in one click. Always take one when the update adds migrations (new files in `migrations/`): MySQL can't undo a migration that fails part-way.
+
+`git pull` asks for credentials if the repository is private (your GitHub username, then `<github-token>`): the token is never stored in the container.
+
+### Moving a container cloned from Gitea to GitHub (once)
+
+The code moved from Gitea to GitHub on 2026-10-18 with a fresh history (its first commit is `60c549d`, "initial push"), so a container cloned from Gitea can't `git pull` from GitHub ("refusing to merge unrelated histories"). Point it at GitHub and jump to GitHub's version instead, then carry on with the update steps above from `pip install`:
+
+```bash
+cd /opt/trading
+git status --short            # must print nothing: the container's code is never edited. If it lists files, stop and look.
+git remote set-url origin https://github.com/OpenTwig/Claude-Capstone-Team1-Test-github.git
+git fetch origin
+git reset --hard origin/main  # replaces the old checkout with GitHub's main; .venv and other ignored files are kept
+git branch --set-upstream-to=origin/main main
+```
 
 ---
 
