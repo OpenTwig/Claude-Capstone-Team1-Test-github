@@ -111,9 +111,69 @@ def seed_command() -> None:
         click.echo(f"Demo customer {result.demo_email} already exists, skipped.")
 
 
+@click.command("market-status")
+@with_appcontext
+def market_status_command() -> None:
+    """Show whether the market is open right now (honours CLOCK_OVERRIDE; R15.6)."""
+    from app import clock
+    from app.services.market import current_status, market_tz
+
+    status = current_status()
+    now_local = clock.now_utc().astimezone(market_tz())
+    click.echo(f"Market time now: {now_local:%Y-%m-%d %H:%M %Z} ({now_local:%A})")
+    if status.is_open:
+        click.echo(f"OPEN. Closes at {status.closes_at:%Y-%m-%d %H:%M %Z}.")
+    else:
+        click.echo(f"CLOSED. Next opens {status.next_open:%Y-%m-%d %H:%M %Z}.")
+
+
+@click.command("open-market-now")
+@with_appcontext
+def open_market_now_command() -> None:
+    """Print the one line to set CLOCK_OVERRIDE so the market is open right now.
+
+    A jury rig for demos on a weekend/holiday: it finds the next trading day,
+    targets mid-session, and shows the command to export. Run that, then start
+    (or restart) the server and price generator in the same shell.
+    """
+    from datetime import datetime, timedelta
+
+    from app import clock
+    from app.services.market import current_schedule, is_trading_day, market_tz
+
+    tz = market_tz()
+    schedule = current_schedule()
+    # Midpoint of the trading session, so we're comfortably inside open..close.
+    midday = (
+        datetime.combine(datetime(2000, 1, 1), schedule.open_time)
+        + (datetime.combine(datetime(2000, 1, 1), schedule.close_time)
+           - datetime.combine(datetime(2000, 1, 1), schedule.open_time)) / 2
+    ).time()
+
+    day = clock.now_utc().astimezone(tz).date()
+    for _ in range(366 * 2):
+        if is_trading_day(day):
+            break
+        day += timedelta(days=1)
+
+    target = datetime.combine(day, midday)  # naive -> clock reads it as market-local
+    value = target.isoformat(timespec="minutes")
+    click.echo(f"Next trading day is {day:%A %Y-%m-%d}. Set the override to {target:%H:%M} market time:")
+    click.echo("")
+    click.echo("PowerShell:")
+    click.echo(f'  $env:{clock.CLOCK_OVERRIDE_ENV} = "{value}"')
+    click.echo("bash / zsh:")
+    click.echo(f'  export {clock.CLOCK_OVERRIDE_ENV}="{value}"')
+    click.echo("")
+    click.echo("Then run `flask market-status` (and start the server) in the same shell.")
+    click.echo(f"Unset it to return to real time (PowerShell: Remove-Item Env:\\{clock.CLOCK_OVERRIDE_ENV}).")
+
+
 def init_cli(app: Flask) -> None:
     app.cli.add_command(db_upgrade_command)
     app.cli.add_command(create_admin_command)
     app.cli.add_command(issue_temp_password_command)
     app.cli.add_command(price_generator_command)
     app.cli.add_command(seed_command)
+    app.cli.add_command(market_status_command)
+    app.cli.add_command(open_market_now_command)
