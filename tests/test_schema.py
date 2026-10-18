@@ -409,10 +409,18 @@ def test_market_schedule_needs_one_to_seven_trading_days(db, owner, days):  # R1
             (days, owner.user))
 
 
-def test_market_schedule_defaults_to_monday_to_friday_not_forced(db, owner):  # DV12, AR05
+def test_market_schedule_defaults_to_monday_to_friday_on_schedule(db, owner):  # DV12, AR05
     run(db, "INSERT INTO MarketSchedule (open_time, close_time, updated_by) VALUES ('09:00', '17:00', %s)", (owner.user,))
     with db.cursor() as cur:
-        cur.execute("SELECT trading_days, force_open FROM MarketSchedule")
+        cur.execute("SELECT * FROM MarketSchedule")
         saved = cur.fetchone()
     db.commit()
-    assert (saved["trading_days"], saved["force_open"]) == (31, 0)
+    assert (saved["trading_days"], saved["market_override"]) == (31, "Schedule")
+    assert "force_open" not in saved                       # replaced by market_override (migration 009)
+
+
+@pytest.mark.parametrize("override", ["", "open", "Halted"])
+def test_market_override_is_restricted(db, owner, override):  # R15.7, DV12
+    with mysql_error(db, CHECK_VIOLATION):
+        run(db, "INSERT INTO MarketSchedule (open_time, close_time, market_override, updated_by) VALUES ('09:00', '17:00', %s, %s)",
+            (override, owner.user))

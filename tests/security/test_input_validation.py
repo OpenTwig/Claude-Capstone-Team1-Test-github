@@ -61,7 +61,7 @@ FORMS = {
                    "exchange": "NASDAQ", "description": "Solar."},
                   'data-error="add_stock:{field}"', "Issuer"),
     "schedule": ("admin", "/admin/market-schedule",
-                 {"open_time": "08:30", "close_time": "16:00", "trading_days": ["0", "1", "2", "3", "4"], "force_open": ""},
+                 {"open_time": "08:30", "close_time": "16:00", "trading_days": ["0", "1", "2", "3", "4"], "market_override": "Schedule"},
                  'data-error="schedule:{field}"', "MarketSchedule"),
     "portfolio": ("customer", "/account/portfolios", {"account_name": "Retirement", "account_type": "Brokerage"},
                   'data-error="{field}"', "Portfolio"),
@@ -112,7 +112,9 @@ CASES = {
         # A list is several checked boxes; [] is none checked (R15.3, R15.5, D29).
         "trading_days": [(["0", "1", "2", "3", "4"], True), (["5", "6"], True), ("0", True), ("6", True), ([], False),
                          ("7", False), ("-1", False), ("Monday", False), ("", False), (["0", "9"], False)],
-        "force_open": [("on", True), ("", True)],   # R15.7: anything but "on" leaves it off
+        # R15.7: "" (nothing chosen) follows the schedule; values are case-sensitive
+        "market_override": [("Schedule", True), ("Open", True), ("Closed", True), ("", True), ("open", False),
+                            ("Halted", False), ("Open ", False)],
     },
     "portfolio": {
         "account_name": text_cases(100),

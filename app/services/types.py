@@ -14,8 +14,9 @@ from decimal import Decimal
 class MarketStatus:
     is_open: bool
     closes_at: datetime | None  # market-local; None while closed or forced open
-    next_open: datetime | None  # market-local; None while open
-    forced_open: bool = False   # an administrator's Force market open is on (D29)
+    next_open: datetime | None  # market-local; None while open or forced closed
+    forced_open: bool = False   # an administrator chose Force open (D29)
+    forced_closed: bool = False  # an administrator chose Force closed (D29)
 
 
 @dataclass(frozen=True)

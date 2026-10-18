@@ -158,14 +158,15 @@ def test_fixed_clock_fixture(fixed_clock):
     assert is_open(clock.now_utc())
 
 
-# --- Trading days and Force market open (task 6.3; R15.3, R15.7, D29) ----------------------------------------
+# --- Trading days and the Market Control (task 6.3; R15.3, R15.7, D29) ---------------------------------------
 WEEKEND = Schedule(trading_days={5, 6})
-FORCED = Schedule(force_open=True)
+FORCED = Schedule(override="Open")
+CLOSED = Schedule(override="Closed")
 
 
-def test_default_schedule_is_monday_to_friday_and_not_forced():  # R15.1, AR05
+def test_default_schedule_is_monday_to_friday_and_follows_the_schedule():  # R15.1, AR05
     assert DEFAULT_SCHEDULE.trading_days == MON_TO_FRI == {0, 1, 2, 3, 4}
-    assert not DEFAULT_SCHEDULE.force_open
+    assert DEFAULT_SCHEDULE.override == "Schedule"
 
 
 def test_chosen_days_open_and_other_days_close():  # R15.3
@@ -192,13 +193,37 @@ def test_holidays_still_close_a_chosen_day():  # R15.2, D29
 ])
 def test_force_open_beats_hours_days_and_holidays(moment):  # R15.7
     assert is_open(moment.astimezone(UTC), FORCED)
-    assert is_open(moment.astimezone(UTC), Schedule(trading_days={2}, force_open=True))
+    assert is_open(moment.astimezone(UTC), Schedule(trading_days={2}, override="Open"))
+
+
+@pytest.mark.parametrize("moment", [
+    az(*MONDAY, 9, 0),             # the opening moment
+    az(*MONDAY, 12, 30),           # the middle of the hours
+    az(*MONDAY, 16, 59),           # just before the close
+    az(2026, 9, 26, 12, 0),        # a Saturday, chosen below
+])
+def test_force_closed_beats_the_hours(moment):  # R15.7
+    assert not is_open(moment.astimezone(UTC), CLOSED)
+    assert not is_open(moment.astimezone(UTC), Schedule(trading_days=range(7), override="Closed"))
 
 
 def test_market_status_while_forced_open_has_no_closing_time():  # R15.9, D29
     status = market_status(az(2026, 9, 26, 12, 0).astimezone(UTC), FORCED)
     assert status.is_open and status.forced_open and status.closes_at is None and status.next_open is None
+    assert not status.forced_closed
     assert not market_status(az(*MONDAY, 10, 0).astimezone(UTC)).forced_open
+
+
+def test_market_status_while_forced_closed_has_no_opening_time():  # R15.9, D29
+    status = market_status(az(*MONDAY, 10, 0).astimezone(UTC), CLOSED)
+    assert not status.is_open and status.forced_closed and status.next_open is None and status.closes_at is None
+    assert not status.forced_open
+    assert not market_status(az(2026, 9, 26, 10, 0).astimezone(UTC)).forced_closed   # an ordinary closed Saturday
+
+
+def test_schedule_refuses_an_unknown_override():  # R15.5
+    with pytest.raises(ValueError):
+        Schedule(override="Maybe")
 
 
 def test_next_open_skips_days_that_are_not_chosen():  # R15.3

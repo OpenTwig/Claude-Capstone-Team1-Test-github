@@ -158,7 +158,7 @@ The ERD (`docs/reference/images/erd.png`) is the source of truth (D1). Table and
 | DV6 | Added `CHECK`, `UNIQUE`, and index constraints | Enforce invariants in the database (N2.4); no column changes. |
 | DV9 | `Issuer.shares_available` required and never negative; new `Issuer.is_listed` (migration 003) | Limited share supply (D16) and delisting (D20). |
 | DV10 | `MarketSchedule.start_date` and `end_date` removed (migration 004) | The Market Time form has no dates (D21). |
-| DV12 | New `MarketSchedule.trading_days` and `force_open` (migration 008) | The Market Time form picks the trading days and can force the market open (D29). |
+| DV12 | New `MarketSchedule.trading_days` (migration 008) and `market_override` (migration 009, replacing 008's `force_open`; exact-case in migration 010) | The Market Time form picks the trading days and can force the market open or closed (D29). |
 | DV11 | New `BankAccount.is_active` (migration 007) | Remove a bank account without deleting it, so past transfers keep their bank account (D25, R10.7). |
 | DV8 | Transfer type `Internal` and one History row per account for it (migration 005) | Transfers between a customer's own accounts (D15, R19). |
 | DV7 | `User.must_change_password`, `User.temp_password_expires_at`, `User.session_version` (migration 002) | First-login password change and expiring temporary passwords (D10, R18); `session_version` ends a user's other logins when their password changes. |
@@ -313,7 +313,7 @@ CREATE TABLE MarketSchedule (
   close_time  TIME        NOT NULL,
   start_date  DATE        NULL,                           -- removed in migration 004 (D21)
   end_date    DATE        NULL,                           -- removed in migration 004 (D21)
-  -- trading_days and force_open are added in migration 008 (D29)
+  -- trading_days is added in migration 008 and market_override in migration 009 (D29)
   updated_by  INT         NOT NULL,
   updated_at  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   FOREIGN KEY (updated_by) REFERENCES `User`(userID),
@@ -356,6 +356,29 @@ ALTER TABLE MarketSchedule
 ```
 
 Existing rows get Monday to Friday and no override, so the market behaves exactly as before until an administrator saves new settings.
+
+### Migration `009_market_override.sql` (DV12, task 6.3)
+
+The one-way `force_open` switch became a three-way control (D29), so the flag becomes a value:
+
+```sql
+ALTER TABLE MarketSchedule
+  ADD COLUMN market_override VARCHAR(10) NOT NULL DEFAULT 'Schedule' AFTER trading_days,
+  ADD CONSTRAINT market_schedule_override CHECK (market_override IN ('Schedule', 'Open', 'Closed'));
+UPDATE MarketSchedule SET market_override = 'Open' WHERE force_open;
+ALTER TABLE MarketSchedule DROP COLUMN force_open;
+```
+
+### Migration `010_market_override_exact_case.sql` (DV12, task 6.3)
+
+The database's default collation compares text without regard to case, so 009's `CHECK` accepted `'open'`, which the app can't read back. A binary collation makes the check exact:
+
+```sql
+ALTER TABLE MarketSchedule
+  MODIFY market_override VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'Schedule';
+```
+
+The older `CHECK (... IN (...))` columns (`Transaction.type`, `Transfer.status`, and so on) share the case-insensitive comparison; the app always writes them in the right case.
 
 ### Migration `007_bank_account_removal.sql` (DV11, task 3.1)
 
@@ -601,19 +624,22 @@ Read-model types (`UserRow`, `PortfolioRow`, `BankAccountRow`, `StockRow`, `Posi
 
 ```python
 def is_open(at_utc, schedule) -> bool:
-    if schedule.force_open:                                     # D29: beats hours, days, and holidays
+    if schedule.override == "Open":                             # D29: beats hours, days, and holidays
         return True
+    if schedule.override == "Closed":                           # D29: beats the hours
+        return False
     local = at_utc.astimezone(ZoneInfo("America/Phoenix"))      # D6
     if not is_trading_day(local.date(), schedule):              # a chosen day (Mon–Fri by default, AR05), not a holiday
         return False
     return schedule.open_time <= local.time() < schedule.close_time
 ```
 
-- `Schedule(open_time, close_time, trading_days, force_open)`: `trading_days` is a set of `date.weekday()` numbers (0 = Monday), stored as a bit mask in `MarketSchedule.trading_days` (DV12); at least one day is required.
+- `Schedule(open_time, close_time, trading_days, override)`: `override` is `"Schedule"` (the default), `"Open"`, or `"Closed"`, stored in `MarketSchedule.market_override`; `trading_days` is a set of `date.weekday()` numbers (0 = Monday), stored as a bit mask in `MarketSchedule.trading_days` (DV12); at least one day is required.
 - `is_holiday(d)` uses `holidays.NYSE(years=d.year)`, cached per year (D4, A16). `is_trading_day(d, schedule)` is a chosen weekday that is not a holiday; with the default schedule it is Monday to Friday, which Randomize History keeps using (A9).
 - `current_schedule()` returns the most recently saved `MarketSchedule` row, or the default (09:00–17:00, Monday to Friday, not forced) if none exists. The settings apply until changed; there are no dates (D21, D29).
-- `save_schedule(admin, open_time, close_time, trading_days, force_open)` inserts one row with all four, so a save is all or nothing and every row records who changed it (R15.8, R17).
-- `market_status()` returns `open`/`closed` plus when it closes (if open) or next opens (if closed), for the Trade page badge (R15.6) and the Market Time card (R15.9). While forced open it returns `is_open=True, forced_open=True` with no close time.
+- `save_schedule(admin, open_time, close_time, trading_days, override)` inserts one row with all four, so a save is all or nothing and every row records who changed it (R15.8, R17).
+- `market_status()` returns `open`/`closed` plus when it closes (if open) or next opens (if closed), for the Trade page badge (R15.6) and the Market Time card (R15.9). While forced open it returns `is_open=True, forced_open=True` with no close time; while forced closed, `is_open=False, forced_closed=True` with no next open time (nobody knows when an administrator will choose Schedule again).
+- While forced closed the generator moves no prices (R16.5) and the stale-price banner stays off, as on any closed day; the day's value snapshot is still saved after the scheduled close.
 - Trading services call `is_open()` twice: once at preview and once inside the execute transaction (R8.7).
 
 ### Trading (R8, R9)
@@ -808,7 +834,7 @@ All routes require login except `/signin`. "Auth" means any signed-in user; data
 | POST | `/admin/users/<id>/temporary-password` | Issue a new temporary password | admin | R18.9 | wf-6 |
 | GET, POST | `/change-password` | Choose a new password (first login) | auth | R18.3–R18.7 | (none) |
 | POST | `/admin/stocks` | Add stock | admin | R14 | wf-6 |
-| POST | `/admin/market-schedule` | Save market hours, trading days, and Force market open | admin | R15, D29 | wf-6 |
+| POST | `/admin/market-schedule` | Save market hours, trading days, and the market control | admin | R15, D29 | wf-6 |
 
 | POST | `/admin/users/<id>/edit` | Edit a user (name, email, date of birth) | admin | R3.12 | wf-6 |
 | POST | `/admin/stocks/<id>/edit` | Edit a stock (name, description, exchange) | admin | R14.8 | wf-6 |
@@ -832,7 +858,7 @@ Account, Positions, Trade, and Transfer Funds are customer-only: administrators 
 - **Trade (wf-2):** the ticket starts with only Symbol visible; after a successful quote lookup it reveals the stock panel and the Action/Unit/Amount/Order Type/Timing fields, as in the wireframe's second state. The Legal Information panel is a collapsed Bootstrap accordion with placeholder text. Bid/Ask/Size are not shown (D17). The symbol lookup is a GET form (`/trade?portfolio=<id>&symbol=<sym>`), so it works without JavaScript; `trade.js` turns it into a `/api/quote` call that fills the panel without a reload. Choosing another portfolio reloads the page for it. The confirmation screen reads nothing from the confirm form except the nonce: the order itself comes from the session. The order confirmation is rendered by the confirm POST; refreshing it re-posts a used nonce and shows the "expired" message, so it can't place a second order. Customers see a Trade button on the stock detail page that opens the ticket for that symbol. The quote panel shows Change since close, Shares owned, and Market value (shares owned × current price, to the cent); Sell is greyed out in the Action list while the portfolio holds none of the stock (user feedback, 2026-09-28), and the server still rejects such a sell with "Quantity exceeds shares owned" (R9.4).
 - **Stocks (wf-1):** Top Gainers and Trending (most traded today, D18); Most Active and Top Losers are omitted (D5); delisted stocks never appear (D20). Search results appear above the two panels, which stay on the page. Top Gainers ranks by the exact % change (ties by symbol) and shows it rounded to 0.01%. The detail view shows Open as "—" before the first price tick of the day (A8). An unknown or delisted symbol shows "Symbol not found" on the search page with status 404. Sparklines and the price chart get their numbers from a `<script type="application/json">` data block, and change colour with the theme.
 - **Positions (wf-4):** no Mutual Funds group (D17); each equity row has a Reinvest? Yes/No toggle (a small POST form) with no effect beyond saving the flag (D22).
-- **Administration (wf-6):** Add User, Add Stocks, and Market Time across the top; below them the Users list and then the Stocks list, each on its own full-width row (each scrolls inside its card). The wireframe puts the two lists side by side; they were split onto separate rows at the user's request (2026-09-29) because half the page was too narrow for emails and the row buttons. Edit opens a small form under the row; Deactivate, New temp password, and Delist ask for confirmation. A temporary password appears once in a notice in the page that answers the POST, which is marked `Cache-Control: no-store`; it is never flashed or stored in the session (R3.4, R3.5). The SSN box is never refilled after an error (R3.6). The Stocks list includes delisted stocks, marked Delisted, after the listed ones. Both lists show 10 rows a page (`?users_page=N&stocks_page=M`, user feedback 2026-09-29), with "Showing 11–20 of 57" and a page selector (‹, the first and last page numbers, the current page ±1 with … for gaps, ›) shared by both lists (`services/paging.py`, `ListPage`). Paging one list keeps the other on its page; a page number that doesn't exist shows the nearest real page; every row action returns to the pages that were showing. Access Level and Department show only when Role is Administrator (D19). An administrator gets no Deactivate or New temp password buttons on their own row (R18.10). **Market Time** (D29; the wireframe's start/end dates were dropped by D21) shows, from top to bottom: the market's state now (a green dot and "Market open · closes 5:00 PM", a red dot and "Market closed · opens Mon 9:00 AM", or a green dot and "Market open · opened manually"), the saved hours and days in words, Open Time and Close Time, a Trading Days dropdown of seven checkboxes (Monday to Sunday) whose button summarises the choice ("Mon–Fri", "Every day", "Mon, Wed, Fri"; kept current by `admin.js`), the Force market open switch, and one Submit button pinned to the bottom of the card that saves everything.
+- **Administration (wf-6):** Add User, Add Stocks, and Market Time across the top; below them the Users list and then the Stocks list, each on its own full-width row (each scrolls inside its card). The wireframe puts the two lists side by side; they were split onto separate rows at the user's request (2026-09-29) because half the page was too narrow for emails and the row buttons. Edit opens a small form under the row; Deactivate, New temp password, and Delist ask for confirmation. A temporary password appears once in a notice in the page that answers the POST, which is marked `Cache-Control: no-store`; it is never flashed or stored in the session (R3.4, R3.5). The SSN box is never refilled after an error (R3.6). The Stocks list includes delisted stocks, marked Delisted, after the listed ones. Both lists show 10 rows a page (`?users_page=N&stocks_page=M`, user feedback 2026-09-29), with "Showing 11–20 of 57" and a page selector (‹, the first and last page numbers, the current page ±1 with … for gaps, ›) shared by both lists (`services/paging.py`, `ListPage`). Paging one list keeps the other on its page; a page number that doesn't exist shows the nearest real page; every row action returns to the pages that were showing. Access Level and Department show only when Role is Administrator (D19). An administrator gets no Deactivate or New temp password buttons on their own row (R18.10). **Market Time** (D29; the wireframe's start/end dates were dropped by D21) shows, from top to bottom: the market's state now (a green dot and "Market open · closes 5:00 PM", a red dot and "Market closed · opens Mon 9:00 AM", a green dot and "Market open · opened manually", or a red dot and "Market closed · closed manually"), the saved hours and days in words, Open Time and Close Time, a Trading Days dropdown of seven checkboxes (Monday to Sunday) whose button summarises the choice ("Mon–Fri", "Every day", "Mon, Wed, Fri"; kept current by `admin.js`), the Market Control button group (three radio buttons styled as one bar: Schedule, Force open, Force closed), and one Submit button pinned to the bottom of the card that saves everything.
 - **Transfer (wf-7):** the Support panel shows "Questions about a transfer? Contact support at <SUPPORT_EMAIL>, <SUPPORT_HOURS>." (D24).
 
 ---

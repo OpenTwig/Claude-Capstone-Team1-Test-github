@@ -409,14 +409,18 @@ def test_shares_filter(value, shown):
     assert shares(value) == shown
 
 
-# --- Force market open (task 6.3; R15.6, R15.7, D29) ---------------------------------------------------------
+# --- Force open and Force closed (task 6.3; R15.6, R15.7, D29) ----------------------------------------------
 
 SATURDAY = datetime(2026, 9, 26, 12, 0, tzinfo=AZ)
 
 
+def force(db, override):
+    one(db, "INSERT INTO MarketSchedule (open_time, close_time, market_override, updated_by) VALUES ('09:00', '17:00', %s, %s)",
+        (override, make_user(db)))
+
+
 def force_open(db):
-    one(db, "INSERT INTO MarketSchedule (open_time, close_time, force_open, updated_by) VALUES ('09:00', '17:00', TRUE, %s)",
-        (make_user(db),))
+    force(db, "Open")
 
 
 def test_badge_says_open_while_forced_open(db, trader, fixed_clock):  # R15.6, R15.7
@@ -434,3 +438,19 @@ def test_a_buy_executes_on_a_weekend_while_forced_open(db, trader, market, fixed
     force_open(db)
     assert place(trader).status_code == 200
     assert held(db, trader.portfolio, market) == D("2.5") and cash(db, trader.portfolio) == D("900.00")
+
+
+def test_badge_says_closed_while_forced_closed(db, trader):  # R15.6, R15.7
+    force(db, "Closed")                                        # NOW is Monday 10:00, normally open
+    html = trader.get("/trade?symbol=AURA").get_data(as_text=True)
+    assert re.search(r'text-bg-secondary" data-market>Market closed<', html)
+    body = trader.get(f"/api/quote/AURA?portfolio={trader.portfolio}").get_json()
+    assert body["market_open"] is False and body["market_text"] == "Market closed"
+
+
+def test_no_trade_during_the_hours_while_forced_closed(db, trader):  # R15.7, R8.4, R9.3
+    html = preview(trader).get_data(as_text=True)              # a review screen opened while the market was open
+    force(db, "Closed")
+    assert "Market is closed" in confirm(trader, nonce_of(html)).get_data(as_text=True)
+    assert trades(db) == 0 and cash(db, trader.portfolio) == D("1000.00")
+    assert "Market is closed" in preview(trader).get_data(as_text=True)

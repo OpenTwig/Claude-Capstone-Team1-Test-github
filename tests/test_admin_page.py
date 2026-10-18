@@ -345,15 +345,22 @@ WEEKDAYS = ["0", "1", "2", "3", "4"]
 SATURDAY_NOON = datetime(2026, 10, 3, 12, 0, tzinfo=AZ)
 
 
-def save_market(client, open_time="09:00", close_time="17:00", trading_days=WEEKDAYS, force_open=False):
-    data = {"open_time": open_time, "close_time": close_time, "trading_days": trading_days}
-    if force_open:
-        data["force_open"] = "on"
+def save_market(client, open_time="09:00", close_time="17:00", trading_days=WEEKDAYS, market_override="Schedule"):
+    data = {"open_time": open_time, "close_time": close_time, "trading_days": trading_days, "market_override": market_override}
     return post(client, "/admin/market-schedule", **data)
 
 
 def market_card(html):
     return html[html.index("data-market-time"):html.index("data-users")]
+
+
+def dot(card):
+    """The status dot's colour: "success" (green) or "danger" (red)."""
+    return re.search(r'class="market-dot rounded-circle bg-(\w+)" aria-hidden="true"', card).group(1)
+
+
+def chosen_control(card):
+    return re.findall(r'name="market_override"[^>]*value="(\w+)"[^>]*\bchecked\b', card)
 
 
 def test_saving_market_hours(db, admin, web_app):  # R15.3, R15.4
@@ -391,11 +398,11 @@ def test_trading_days_dropdown_lists_monday_to_sunday(db, admin):  # R15.3, D29
 
 
 def test_no_trading_day_is_refused_and_the_schedule_stays(db, admin, web_app):  # R15.5, D29
-    html = save_market(admin, "10:00", "15:00", trading_days=[], force_open=True).get_data(as_text=True)
+    html = save_market(admin, "10:00", "15:00", trading_days=[], market_override="Closed").get_data(as_text=True)
     assert 'data-error="schedule:trading_days"' in html and "Select at least one trading day." in html
     card = market_card(html)
-    assert 'value="10:00"' in card and 'value="15:00"' in card            # what was typed comes back
-    assert re.search(r'id="force-open"[^>]*\bchecked\b', card)
+    assert 'value="10:00"' in card and 'value="15:00"' in card            # what was chosen comes back
+    assert chosen_control(card) == ["Closed"]
     assert "data-days-label>No days selected</button>" in card
     with web_app.app_context():
         assert market.current_schedule() == market.DEFAULT_SCHEDULE
@@ -408,45 +415,81 @@ def test_tampered_trading_days_are_refused(db, admin, web_app):  # R15.5, N2.2
     assert count(db, "MarketSchedule") == 0
 
 
-def test_force_market_open_opens_it_on_a_weekend(db, admin, web_app, fixed_clock):  # R15.7, R15.8, R15.9
+def test_tampered_market_control_is_refused(db, admin):  # R15.5, N2.2
+    html = save_market(admin, market_override="Halted").get_data(as_text=True)
+    assert 'data-error="schedule:market_override"' in html and "Choose Schedule, Force open, or Force closed." in html
+    assert count(db, "MarketSchedule") == 0
+
+
+def test_market_control_offers_three_choices_starting_on_schedule(db, admin):  # R15.7
+    card = market_card(admin.get("/admin").get_data(as_text=True))
+    labels = re.findall(r'<label class="btn btn-outline-\w+" for="override-\w+">([\w ]+)</label>', card)
+    assert labels == ["Schedule", "Force open", "Force closed"]
+    assert len(re.findall(r'type="radio" class="btn-check" name="market_override"', card)) == 3
+    assert chosen_control(card) == ["Schedule"]
+
+
+def test_force_open_opens_the_market_on_a_weekend(db, admin, web_app, fixed_clock):  # R15.7, R15.8, R15.9
     fixed_clock(SATURDAY_NOON)
     card = market_card(admin.get("/admin").get_data(as_text=True))
-    assert 'data-market-status="closed"' in card and "bg-danger" in card and "Market closed · opens Mon 9:00 AM" in card
-    assert not re.search(r'id="force-open"[^>]*\bchecked\b', card)
+    assert 'data-market-status="closed"' in card and dot(card) == "danger" and "Market closed · opens Mon 9:00 AM" in card
 
-    assert save_market(admin, "10:00", "15:00", trading_days=["0", "2"], force_open=True).status_code == 302
+    assert save_market(admin, "10:00", "15:00", trading_days=["0", "2"], market_override="Open").status_code == 302
     html = admin.get("/admin").get_data(as_text=True)
-    assert "Force market open is on: the market stays open until it is switched off." in html
+    assert "Force open is on: the market stays open until Schedule is chosen again." in html
     card = market_card(html)
-    assert 'data-market-status="open"' in card and "bg-success" in card and "Market open · opened manually" in card
-    assert re.search(r'id="force-open"[^>]*\bchecked\b', card)
+    assert 'data-market-status="open"' in card and dot(card) == "success" and "Market open · opened manually" in card
+    assert chosen_control(card) == ["Open"]
     with web_app.app_context():
         saved = market.current_schedule()   # one Submit saved all of it (R15.8)
-        assert (saved.open_time, saved.close_time, saved.trading_days, saved.force_open) == (time(10), time(15), {0, 2}, True)
+        assert (saved.open_time, saved.close_time, saved.trading_days, saved.override) == (time(10), time(15), {0, 2}, "Open")
         assert market.is_market_open(SATURDAY_NOON)
 
 
-def test_switching_force_open_off_returns_to_the_schedule(db, admin, web_app, fixed_clock):  # R15.7
-    fixed_clock(SATURDAY_NOON)
-    save_market(admin, force_open=True)
-    save_market(admin, force_open=False)
-    card = market_card(admin.get("/admin").get_data(as_text=True))
-    assert 'data-market-status="closed"' in card and "Market closed · opens Mon 9:00 AM" in card
+def test_force_closed_closes_the_market_during_the_hours(db, admin, web_app):  # R15.7, R15.8, R15.9
+    card = market_card(admin.get("/admin").get_data(as_text=True))   # NOW is a Tuesday at 10:00
+    assert 'data-market-status="open"' in card and dot(card) == "success"
+
+    assert save_market(admin, market_override="Closed").status_code == 302
+    html = admin.get("/admin").get_data(as_text=True)
+    assert "Force closed is on: the market stays closed until Schedule is chosen again." in html
+    card = market_card(html)
+    assert 'data-market-status="closed"' in card and dot(card) == "danger" and "Market closed · closed manually" in card
+    assert chosen_control(card) == ["Closed"]
     with web_app.app_context():
-        assert not market.current_schedule().force_open and not market.is_market_open(SATURDAY_NOON)
+        assert market.current_schedule().override == "Closed" and not market.is_market_open(NOW)
+
+
+@pytest.mark.parametrize("forced, moment, state_now", [
+    ("Open", SATURDAY_NOON, "Market closed · opens Mon 9:00 AM"),
+    ("Closed", NOW, "Market open · closes 5:00 PM"),
+])
+def test_choosing_schedule_again_returns_to_the_schedule(db, admin, web_app, fixed_clock, forced, moment, state_now):  # R15.7
+    fixed_clock(moment)
+    save_market(admin, market_override=forced)
+    save_market(admin, market_override="Schedule")
+    card = market_card(admin.get("/admin").get_data(as_text=True))
+    assert state_now in card and chosen_control(card) == ["Schedule"]
+    with web_app.app_context():
+        assert market.current_schedule().override == "Schedule"
+
+
+def test_a_form_without_a_control_follows_the_schedule(db, admin, web_app):  # R15.7: fail safe
+    post(admin, "/admin/market-schedule", open_time="09:00", close_time="17:00", trading_days=WEEKDAYS)
+    with web_app.app_context():
+        assert market.current_schedule().override == "Schedule"
 
 
 def test_status_shows_open_with_a_green_dot_during_hours(db, admin):  # R15.9
     card = market_card(admin.get("/admin").get_data(as_text=True))   # NOW is a Tuesday at 10:00
-    assert 'data-market-status="open"' in card and "bg-success" in card and "bg-danger" not in card
+    assert 'data-market-status="open"' in card and dot(card) == "success"
     assert "Market open · closes 5:00 PM" in card
-    assert re.search(r'class="market-dot rounded-circle bg-success" aria-hidden="true"', card)
 
 
 def test_one_submit_at_the_bottom_of_the_market_card(db, admin):  # R15.8
     card = market_card(admin.get("/admin").get_data(as_text=True))
     assert card.count('type="submit"') == 1
-    assert card.index('id="trading-days"') < card.index('id="force-open"') < card.index('type="submit"')
+    assert card.index('id="trading-days"') < card.index("data-market-override") < card.index('type="submit"')
     assert re.search(r'<div class="d-flex justify-content-end mt-auto pt-3">\s*<button type="submit"', card)
     assert 'class="card-body d-flex flex-column"' in card
 

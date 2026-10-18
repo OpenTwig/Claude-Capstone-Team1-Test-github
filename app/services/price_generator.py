@@ -113,7 +113,7 @@ def snapshot_due(now_utc: datetime) -> bool:
     """After the close of a trading day (D23); never while the market is forced open, since prices still move (D29)."""
     local = now_utc.astimezone(market.market_tz())
     schedule = market.current_schedule()
-    if schedule.force_open:
+    if schedule.override == market.FORCE_OPEN:
         return False
     return market.is_trading_day(local.date(), schedule) and local.time() >= schedule.close_time
 

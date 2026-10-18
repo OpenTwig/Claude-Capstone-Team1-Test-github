@@ -156,7 +156,7 @@
       </section>
     </div>
 
-    {# Market Time: status, hours, trading days, and Force market open, all saved by one Submit (R15.3-R15.9, D21, D29). #}
+    {# Market Time: status, hours, trading days, and the Market Control, all saved by one Submit (R15.3-R15.9, D21, D29). #}
     <div class="col-lg-4">
       <section class="card h-100" data-market-time>
         <h2 class="card-header h5 mb-0">Market Time</h2>
@@ -202,14 +202,19 @@
               </div>
               {{ error("schedule", "trading_days") }}
             </div>
-            {# Force market open (R15.7): open at every moment until switched off. #}
+            {# Market Control (R15.7): radio buttons styled as one bar. Forcing lasts until Schedule is chosen again. #}
             <div class="col-12">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" role="switch" id="force-open" name="force_open"
-                       aria-describedby="force-open-help"{% if force_on %} checked{% endif %}>
-                <label class="form-check-label" for="force-open">Force market open</label>
+              <span class="form-label d-block" id="market-override-label">Market Control</span>
+              <div class="btn-group btn-group-sm w-100{{ invalid('schedule', 'market_override') }}" role="radiogroup"
+                   aria-labelledby="market-override-label" aria-describedby="market-override-help" data-market-override>
+                {% for value, label, colour in override_choices %}
+                  <input type="radio" class="btn-check" name="market_override" id="override-{{ value | lower }}" value="{{ value }}"
+                         autocomplete="off"{% if value == chosen_override %} checked{% endif %}>
+                  <label class="btn btn-outline-{{ colour }}" for="override-{{ value | lower }}">{{ label }}</label>
+                {% endfor %}
               </div>
-              <div class="form-text" id="force-open-help">Keeps the market open outside the hours, on other days, and on holidays, until it is switched off.</div>
+              {{ error("schedule", "market_override") }}
+              <div class="form-text" id="market-override-help">Force open or Force closed overrides the hours, days, and holidays until Schedule is chosen again.</div>
             </div>
           </div>
           {# One Submit for everything, pinned to the bottom of the card (R15.8). #}

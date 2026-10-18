@@ -21,13 +21,17 @@ WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturd
 ALL_DAYS = frozenset(range(7))
 MON_TO_FRI = frozenset(range(5))  # AR05
 
+# The Market Control (R15.7, D29): follow the schedule, or force the market open or closed until Schedule is chosen again.
+FOLLOW_SCHEDULE, FORCE_OPEN, FORCE_CLOSED = "Schedule", "Open", "Closed"
+OVERRIDES = (FOLLOW_SCHEDULE, FORCE_OPEN, FORCE_CLOSED)
+
 
 @dataclass(frozen=True)
 class Schedule:
     open_time: time = time(9, 0)
     close_time: time = time(17, 0)
     trading_days: frozenset[int] = MON_TO_FRI
-    force_open: bool = False  # D29: open at every moment until an administrator switches it off
+    override: str = FOLLOW_SCHEDULE
 
     def __post_init__(self):
         if self.close_time <= self.open_time:
@@ -35,6 +39,8 @@ class Schedule:
         days = frozenset(self.trading_days)
         if not days or not days <= ALL_DAYS:
             raise ValueError("trading days must be one or more of 0 (Monday) to 6 (Sunday)")
+        if self.override not in OVERRIDES:
+            raise ValueError(f"override must be one of {OVERRIDES}")
         object.__setattr__(self, "trading_days", days)
 
 
@@ -109,17 +115,20 @@ def _local(at_utc: datetime, tz: ZoneInfo) -> datetime:
 
 
 def is_open(at_utc: datetime, schedule: Schedule = DEFAULT_SCHEDULE, tz: ZoneInfo = MARKET_TZ) -> bool:
-    """True if the market is open at this instant: forced open (D29), or a trading day and open <= time < close."""
+    """True if the market is open at this instant: forced open, not forced closed (D29), else a trading day
+    and open <= time < close."""
     local = _local(at_utc, tz)
-    if schedule.force_open:
+    if schedule.override == FORCE_OPEN:
         return True  # R15.7: beats the hours, the chosen days, and holidays
+    if schedule.override == FORCE_CLOSED:
+        return False  # R15.7: beats the hours
     if not is_trading_day(local.date(), schedule):
         return False
     return schedule.open_time <= local.time().replace(tzinfo=None) < schedule.close_time
 
 
 def next_open(at_utc: datetime, schedule: Schedule = DEFAULT_SCHEDULE, tz: ZoneInfo = MARKET_TZ) -> datetime:
-    """The next scheduled opening, strictly after `at_utc`, in market-local time (Force market open aside)."""
+    """The next scheduled opening, strictly after `at_utc`, in market-local time (the Market Control aside)."""
     local = _local(at_utc, tz)
     day = local.date()
     for _ in range(366 * 2):  # any chosen weekday comes round within a year, and not every one is a holiday
@@ -132,10 +141,12 @@ def next_open(at_utc: datetime, schedule: Schedule = DEFAULT_SCHEDULE, tz: ZoneI
 
 def market_status(at_utc: datetime, schedule: Schedule = DEFAULT_SCHEDULE, tz: ZoneInfo = MARKET_TZ) -> MarketStatus:
     """Open/closed, plus when it closes (if open) or next opens (if closed), for the Trade page (R15.6)
-    and the Market Time card (R15.9). Forced open has no closing time (D29)."""
+    and the Market Time card (R15.9). Forced open has no closing time, and forced closed no opening time (D29)."""
     local = _local(at_utc, tz)
-    if schedule.force_open:
+    if schedule.override == FORCE_OPEN:
         return MarketStatus(True, None, None, forced_open=True)
+    if schedule.override == FORCE_CLOSED:
+        return MarketStatus(False, None, None, forced_closed=True)
     if is_open(at_utc, schedule, tz):
         return MarketStatus(True, datetime.combine(local.date(), schedule.close_time, tzinfo=tz), None)
     return MarketStatus(False, None, next_open(at_utc, schedule, tz))
@@ -167,7 +178,7 @@ def current_schedule(cursor=None) -> Schedule:
     """
     from app.db import get_db
 
-    sql = ("SELECT open_time, close_time, trading_days, force_open FROM MarketSchedule"
+    sql = ("SELECT open_time, close_time, trading_days, market_override FROM MarketSchedule"
            " ORDER BY updated_at DESC, scheduleID DESC LIMIT 1")
     if cursor is not None:
         cursor.execute(sql)
@@ -180,12 +191,12 @@ def current_schedule(cursor=None) -> Schedule:
     if found is None:
         return DEFAULT_SCHEDULE
     return Schedule(_as_time(found["open_time"]), _as_time(found["close_time"]),
-                    days_from_mask(found["trading_days"]), bool(found["force_open"]))
+                    days_from_mask(found["trading_days"]), found["market_override"])
 
 
 def save_schedule(admin_user_id: int, open_time: time | None, close_time: time | None,
-                  trading_days=MON_TO_FRI, force_open: bool = False) -> None:
-    """Change the market hours, trading days, and Force market open together (R15.3, R15.4, R15.7, R15.8, D29).
+                  trading_days=MON_TO_FRI, override: str = FOLLOW_SCHEDULE) -> None:
+    """Change the market hours, trading days, and Market Control together (R15.3, R15.4, R15.7, R15.8, D29).
 
     An invalid schedule leaves the current one in place (R15.5).
     """
@@ -205,11 +216,13 @@ def save_schedule(admin_user_id: int, open_time: time | None, close_time: time |
         raise ValidationFailed("trading_days", "Select at least one trading day.")
     if not days <= ALL_DAYS:
         raise ValidationFailed("trading_days", "Choose trading days from Monday to Sunday.")
+    if override not in OVERRIDES:
+        raise ValidationFailed("market_override", "Choose Schedule, Force open, or Force closed.")
     with transaction() as cur:
         cur.execute(
-            "INSERT INTO MarketSchedule (open_time, close_time, trading_days, force_open, updated_by)"
+            "INSERT INTO MarketSchedule (open_time, close_time, trading_days, market_override, updated_by)"
             " VALUES (%s, %s, %s, %s, %s)",
-            (open_time, close_time, days_to_mask(days), bool(force_open), admin_user_id),
+            (open_time, close_time, days_to_mask(days), override, admin_user_id),
         )
 
 

@@ -25,6 +25,9 @@ bp = Blueprint("admin", __name__)
 USER_FIELDS = ("name", "ssn", "email", "date_of_birth", "role", "access_level", "department")
 STOCK_FIELDS = ("company_name", "symbol", "price", "shares", "exchange", "description")
 DAY_VALUES = ("0", "1", "2", "3", "4", "5", "6")  # Trading Days checkbox values: date.weekday() numbers (D29)
+# Market Control buttons (R15.7): (value, label, Bootstrap outline colour).
+OVERRIDE_CHOICES = ((market.FOLLOW_SCHEDULE, "Schedule", "secondary"), (market.FORCE_OPEN, "Force open", "success"),
+                    (market.FORCE_CLOSED, "Force closed", "danger"))
 
 
 def _pages(source) -> dict:
@@ -48,9 +51,9 @@ def _page(*, forms: dict | None = None, errors: dict | None = None, notice: dict
     schedule_form = (forms or {}).get("schedule")  # after an error, show what was submitted
     if schedule_form:
         chosen_days = {int(v) for v in schedule_form["trading_days"] if v in DAY_VALUES}
-        force_on = schedule_form["force_open"] == "on"
+        chosen_override = schedule_form["market_override"]
     else:
-        chosen_days, force_on = schedule.trading_days, schedule.force_open
+        chosen_days, chosen_override = schedule.trading_days, schedule.override
     user_page = users.list_users_page(users_page)
     stock_page = valuation.admin_stocks(stocks_page)
     html = render_template(
@@ -59,7 +62,8 @@ def _page(*, forms: dict | None = None, errors: dict | None = None, notice: dict
         user_page_numbers=page_numbers(user_page.page, user_page.pages),
         stock_page=stock_page,
         stock_page_numbers=page_numbers(stock_page.page, stock_page.pages),
-        schedule=schedule, weekday_names=market.WEEKDAY_NAMES, chosen_days=chosen_days, force_on=force_on,
+        schedule=schedule, weekday_names=market.WEEKDAY_NAMES, chosen_days=chosen_days, chosen_override=chosen_override,
+        override_choices=OVERRIDE_CHOICES,
         days_text=market.days_text, days_short=market.days_short,
         market_open=now.is_open, market_state=_market_state(now),
         forms=forms or {}, errors=errors or {}, notice=notice, editing=editing,
@@ -111,6 +115,8 @@ def _market_state(status) -> str:
     """The Market Time card's status line (R15.9)."""
     if status.forced_open:
         return "Market open · opened manually"
+    if status.forced_closed:
+        return "Market closed · closed manually"
     return market_text(status)
 
 
@@ -231,19 +237,21 @@ def delist_stock(issuer_id: int):
 def save_schedule():
     values = {k: request.form.get(k, "") for k in ("open_time", "close_time")}
     values["trading_days"] = request.form.getlist("trading_days")
-    values["force_open"] = "on" if request.form.get("force_open") == "on" else ""
+    values["market_override"] = request.form.get("market_override") or market.FOLLOW_SCHEDULE  # none chosen: follow it
     try:
         market.save_schedule(current_user.user_id, _time(values["open_time"], "open_time", "open time"),
                              _time(values["close_time"], "close_time", "close time"),
-                             _days(values["trading_days"]), values["force_open"] == "on")  # R15.3-R15.5, R15.7, R15.8
+                             _days(values["trading_days"]), values["market_override"])  # R15.3-R15.5, R15.7, R15.8
     except ValidationFailed as exc:
         return _page(forms={"schedule": values}, errors={"schedule": {exc.field: exc.message}})
     schedule = market.current_schedule()
     message = (f"Market hours saved: {schedule.open_time.strftime('%I:%M %p').lstrip('0')} to "
                f"{schedule.close_time.strftime('%I:%M %p').lstrip('0')} Arizona time, "
                f"{market.days_text(schedule.trading_days)}.")
-    if schedule.force_open:
-        message += " Force market open is on: the market stays open until it is switched off."
+    if schedule.override == market.FORCE_OPEN:
+        message += " Force open is on: the market stays open until Schedule is chosen again."
+    elif schedule.override == market.FORCE_CLOSED:
+        message += " Force closed is on: the market stays closed until Schedule is chosen again."
     flash(message, "success")
     return redirect(url_for("admin.index"))
 

@@ -305,15 +305,15 @@ def test_a_failing_stale_check_never_breaks_the_page(db, signed_in, monkeypatch)
     assert response.status_code == 200 and "Prices may be delayed" not in response.get_data(as_text=True)
 
 
-# --- Trading days and Force market open (task 6.3; R15.4, R15.7, D23, D29) ----------------------------------
+# --- Trading days and the Market Control (task 6.3; R15.4, R15.7, D23, D29) ---------------------------------
 
-def set_schedule(db, trading_days=31, force_open=False):
-    one(db, "INSERT INTO MarketSchedule (open_time, close_time, trading_days, force_open, updated_by)"
-            " VALUES ('09:00', '17:00', %s, %s, %s)", (trading_days, force_open, make_user(db)))
+def set_schedule(db, trading_days=31, override="Schedule"):
+    one(db, "INSERT INTO MarketSchedule (open_time, close_time, trading_days, market_override, updated_by)"
+            " VALUES ('09:00', '17:00', %s, %s, %s)", (trading_days, override, make_user(db)))
 
 
 def test_run_ticks_on_a_weekend_while_forced_open(db, web_app, gen, rng, fixed_clock):  # R15.4, R15.7
-    set_schedule(db, force_open=True)
+    set_schedule(db, override="Open")
     fixed_clock(SATURDAY)
     price_generator.run(web_app, rng=rng, sleep=lambda s: None, keep_going=passes(3))
     assert day_row(db, gen["ACME"], SATURDAY.date()) is not None
@@ -327,9 +327,23 @@ def test_run_ticks_on_a_chosen_weekend_day(db, web_app, gen, rng, fixed_clock): 
     assert day_row(db, gen["ACME"], SATURDAY.date()) is not None
 
 
+def test_run_moves_no_prices_during_the_hours_while_forced_closed(db, web_app, gen, rng, fixed_clock):  # R15.7, R16.5
+    set_schedule(db, override="Closed")
+    fixed_clock(NOW)                                          # Monday 10:00, normally open
+    price_generator.run(web_app, rng=rng, sleep=lambda s: None, keep_going=passes(3))
+    assert (price(db, gen["ACME"]), price(db, gen["CHEAP"])) == (D("50.00"), D("1.00"))
+    assert day_row(db, gen["ACME"]) is None
+    assert one(db, "SELECT COUNT(*) AS n FROM SystemState")["n"] == 0
+
+
 def test_no_snapshot_while_forced_open(db, holdings):  # D23, D29: prices are still moving
-    set_schedule(db, force_open=True)
+    set_schedule(db, override="Open")
     assert snapshot_values(AFTER_CLOSE.astimezone(timezone.utc)) == 0 and snapshots(db) == {}
+
+
+def test_snapshot_still_saved_after_the_close_while_forced_closed(db, holdings):  # D23, D29
+    set_schedule(db, override="Closed")
+    assert snapshot_values(AFTER_CLOSE.astimezone(timezone.utc)) == 2
 
 
 def test_snapshot_after_the_close_of_a_chosen_weekend_day(db, holdings):  # D23, D29
