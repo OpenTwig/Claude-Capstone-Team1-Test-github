@@ -64,7 +64,8 @@ def test_page_has_every_panel(db, admin):  # wf-6
     html = admin.get("/admin").get_data(as_text=True)
     for panel in ("Add User", "Add Stocks", "Market Time", "Users", "Stocks"):
         assert f">{panel}</h2>" in html, panel
-    assert "data-market-time" in html and "Now open 9:00 AM to 5:00 PM Arizona time" in html
+    assert "data-market-time" in html
+    assert "Hours: 9:00 AM to 5:00 PM Arizona time, Monday to Friday, except market holidays." in html
     assert 'data-stock-row="AURA"' in html and "$42.18" in html
     assert re.search(r'data-user-row="\d+"', html) and "Ada Admin" in html
     # Users and Stocks each take a full-width row (user feedback), not half the page each.
@@ -338,16 +339,116 @@ def test_stocks_list_shows_change_percent(db, admin):  # R14.7
     assert "+5.00%" in row[:row.index("</tr>")]
 
 
-# --- Market Time (R15.3-R15.5, D21) ----------------------------------------------------------------------
+# --- Market Time (R15.3-R15.9, D21, D29) -----------------------------------------------------------------
+
+WEEKDAYS = ["0", "1", "2", "3", "4"]
+SATURDAY_NOON = datetime(2026, 10, 3, 12, 0, tzinfo=AZ)
+
+
+def save_market(client, open_time="09:00", close_time="17:00", trading_days=WEEKDAYS, force_open=False):
+    data = {"open_time": open_time, "close_time": close_time, "trading_days": trading_days}
+    if force_open:
+        data["force_open"] = "on"
+    return post(client, "/admin/market-schedule", **data)
+
+
+def market_card(html):
+    return html[html.index("data-market-time"):html.index("data-users")]
+
 
 def test_saving_market_hours(db, admin, web_app):  # R15.3, R15.4
-    assert post(admin, "/admin/market-schedule", open_time="08:30", close_time="16:00").status_code == 302
+    assert save_market(admin, "08:30", "16:00").status_code == 302
     with web_app.app_context():
         schedule = market.current_schedule()
         assert (schedule.open_time, schedule.close_time) == (time(8, 30), time(16, 0))
         assert market.is_market_open(datetime(2026, 9, 29, 8, 45, tzinfo=AZ))
         assert not market.is_market_open(datetime(2026, 9, 29, 16, 15, tzinfo=AZ))
-    assert "Market hours saved: 8:30 AM to 4:00 PM Arizona time, every trading day." in admin.get("/admin").get_data(as_text=True)
+    assert "Market hours saved: 8:30 AM to 4:00 PM Arizona time, Monday to Friday." in admin.get("/admin").get_data(as_text=True)
+
+
+def test_saving_trading_days(db, admin, web_app):  # R15.3, R15.4, D29
+    assert save_market(admin, trading_days=["5", "6"]).status_code == 302
+    with web_app.app_context():
+        assert market.current_schedule().trading_days == {5, 6}
+        assert market.is_market_open(SATURDAY_NOON)
+        assert not market.is_market_open(datetime(2026, 9, 29, 12, 0, tzinfo=AZ))   # a Tuesday
+    html = admin.get("/admin").get_data(as_text=True)
+    assert "Market hours saved: 9:00 AM to 5:00 PM Arizona time, Saturday and Sunday." in html
+    card = market_card(html)
+    assert "Hours: 9:00 AM to 5:00 PM Arizona time, Saturday and Sunday, except market holidays." in card
+    assert re.search(r"data-days-label>Sat, Sun</button>", card)
+    checked = re.findall(r'name="trading_days" value="(\d)"[^>]*\bchecked\b', card)
+    assert checked == ["5", "6"]
+
+
+def test_trading_days_dropdown_lists_monday_to_sunday(db, admin):  # R15.3, D29
+    card = market_card(admin.get("/admin").get_data(as_text=True))
+    assert 'data-bs-toggle="dropdown"' in card and 'data-bs-auto-close="outside"' in card
+    labels = re.findall(r'<label class="form-check-label" for="day-\d">(\w+)</label>', card)
+    assert labels == ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    assert re.findall(r'name="trading_days" value="(\d)"[^>]*\bchecked\b', card) == WEEKDAYS   # the default (AR05)
+    assert "data-days-label>Mon–Fri</button>" in card
+
+
+def test_no_trading_day_is_refused_and_the_schedule_stays(db, admin, web_app):  # R15.5, D29
+    html = save_market(admin, "10:00", "15:00", trading_days=[], force_open=True).get_data(as_text=True)
+    assert 'data-error="schedule:trading_days"' in html and "Select at least one trading day." in html
+    card = market_card(html)
+    assert 'value="10:00"' in card and 'value="15:00"' in card            # what was typed comes back
+    assert re.search(r'id="force-open"[^>]*\bchecked\b', card)
+    assert "data-days-label>No days selected</button>" in card
+    with web_app.app_context():
+        assert market.current_schedule() == market.DEFAULT_SCHEDULE
+    assert count(db, "MarketSchedule") == 0
+
+
+def test_tampered_trading_days_are_refused(db, admin, web_app):  # R15.5, N2.2
+    html = save_market(admin, trading_days=["0", "7"]).get_data(as_text=True)
+    assert 'data-error="schedule:trading_days"' in html and "Choose trading days from Monday to Sunday." in html
+    assert count(db, "MarketSchedule") == 0
+
+
+def test_force_market_open_opens_it_on_a_weekend(db, admin, web_app, fixed_clock):  # R15.7, R15.8, R15.9
+    fixed_clock(SATURDAY_NOON)
+    card = market_card(admin.get("/admin").get_data(as_text=True))
+    assert 'data-market-status="closed"' in card and "bg-danger" in card and "Market closed · opens Mon 9:00 AM" in card
+    assert not re.search(r'id="force-open"[^>]*\bchecked\b', card)
+
+    assert save_market(admin, "10:00", "15:00", trading_days=["0", "2"], force_open=True).status_code == 302
+    html = admin.get("/admin").get_data(as_text=True)
+    assert "Force market open is on: the market stays open until it is switched off." in html
+    card = market_card(html)
+    assert 'data-market-status="open"' in card and "bg-success" in card and "Market open · opened manually" in card
+    assert re.search(r'id="force-open"[^>]*\bchecked\b', card)
+    with web_app.app_context():
+        saved = market.current_schedule()   # one Submit saved all of it (R15.8)
+        assert (saved.open_time, saved.close_time, saved.trading_days, saved.force_open) == (time(10), time(15), {0, 2}, True)
+        assert market.is_market_open(SATURDAY_NOON)
+
+
+def test_switching_force_open_off_returns_to_the_schedule(db, admin, web_app, fixed_clock):  # R15.7
+    fixed_clock(SATURDAY_NOON)
+    save_market(admin, force_open=True)
+    save_market(admin, force_open=False)
+    card = market_card(admin.get("/admin").get_data(as_text=True))
+    assert 'data-market-status="closed"' in card and "Market closed · opens Mon 9:00 AM" in card
+    with web_app.app_context():
+        assert not market.current_schedule().force_open and not market.is_market_open(SATURDAY_NOON)
+
+
+def test_status_shows_open_with_a_green_dot_during_hours(db, admin):  # R15.9
+    card = market_card(admin.get("/admin").get_data(as_text=True))   # NOW is a Tuesday at 10:00
+    assert 'data-market-status="open"' in card and "bg-success" in card and "bg-danger" not in card
+    assert "Market open · closes 5:00 PM" in card
+    assert re.search(r'class="market-dot rounded-circle bg-success" aria-hidden="true"', card)
+
+
+def test_one_submit_at_the_bottom_of_the_market_card(db, admin):  # R15.8
+    card = market_card(admin.get("/admin").get_data(as_text=True))
+    assert card.count('type="submit"') == 1
+    assert card.index('id="trading-days"') < card.index('id="force-open"') < card.index('type="submit"')
+    assert re.search(r'<div class="d-flex justify-content-end mt-auto pt-3">\s*<button type="submit"', card)
+    assert 'class="card-body d-flex flex-column"' in card
 
 
 @pytest.mark.parametrize("open_time, close_time, field", [

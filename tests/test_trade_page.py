@@ -407,3 +407,30 @@ def test_stock_detail_links_customers_to_the_trade_page(db, trader):
                                           (D("0"), "0"), (None, "—")])
 def test_shares_filter(value, shown):
     assert shares(value) == shown
+
+
+# --- Force market open (task 6.3; R15.6, R15.7, D29) ---------------------------------------------------------
+
+SATURDAY = datetime(2026, 9, 26, 12, 0, tzinfo=AZ)
+
+
+def force_open(db):
+    one(db, "INSERT INTO MarketSchedule (open_time, close_time, force_open, updated_by) VALUES ('09:00', '17:00', TRUE, %s)",
+        (make_user(db),))
+
+
+def test_badge_says_open_while_forced_open(db, trader, fixed_clock):  # R15.6, R15.7
+    force_open(db)
+    fixed_clock(SATURDAY)
+    html = trader.get("/trade?symbol=AURA").get_data(as_text=True)
+    assert re.search(r'text-bg-success" data-market>Market open<', html)
+    body = trader.get(f"/api/quote/AURA?portfolio={trader.portfolio}").get_json()
+    assert body["market_open"] is True and body["market_text"] == "Market open"
+
+
+def test_a_buy_executes_on_a_weekend_while_forced_open(db, trader, market, fixed_clock):  # R15.7, R8.4
+    fixed_clock(SATURDAY)
+    assert "Market is closed" in preview(trader).get_data(as_text=True)
+    force_open(db)
+    assert place(trader).status_code == 200
+    assert held(db, trader.portfolio, market) == D("2.5") and cash(db, trader.portfolio) == D("900.00")

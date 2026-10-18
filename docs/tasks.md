@@ -52,7 +52,7 @@ If a test fails, the task stays open until the code is fixed. Tests are never de
 | 3 | Money movement, trading, price generator, first-login password change, dark mode | 3.1–3.3, 3.5–3.6 | Checkpoint 2 |
 | 4 | Pages and sample data | 4.1–4.6 | Checkpoint 3 |
 | 5 | Verification: security, math, access control, concurrency, manual walkthrough | 5.1–5.6 | Checkpoint 4 |
-| 6 | Production readiness | 6.1–6.2 | Checkpoint 5 |
+| 6 | Production readiness; market days and manual open | 6.1–6.3 | Checkpoint 5 |
 | Parked | Waiting on open questions | none | the question's answer |
 | Future | Improvements to consider after the task list | none | Checkpoint 6 and the user's go-ahead |
 
@@ -336,6 +336,12 @@ Waves 1–4 each test their own piece. Wave 5 tests the finished application as 
   - `docs/deployment.md` turning design "Production" into concrete steps; 3-2-1 backups plus a **tested restore**; extend `/health` (added in 0.1) with a database check for uptime monitoring. Written for the first, self-hosted stage (Proxmox LXC + Cloudflare Tunnel, D28), with notes for the later cloud stage.
   - **Depends on:** Wave 5 · **Requirements:** N3 · **Design:** Deployment
 
+- [ ] **6.3 Market days and manual open** (wf-6 Market Time; asked for by the user, 2026-10-18)
+  - **In progress:** Claude, 2026-10-18 · code, specs (D29, R15.3/R15.5/R15.7-R15.9, DV12), and tests done; `test_admin_page` 87 passed; calendar, schedule, schema, generator, trade-page, trading, stocks, app-shell, theme, migrate, input-validation, and access-control tests 672 passed, 12 failed. The 12 failures (`test_schema`: app-account privilege checks and the db-upgrade message) fail the same way on the unchanged commit 60c549d: the local `.env` sets `DB_USER=trading_admin`, so the "app account is denied" checks run as an administrator. Migration 008 applied to the local `trading_db`. **Remaining:** the user's browser check of the Market Time card (both themes, phone width, dropdown and switch).
+  - Migration 008 (`MarketSchedule.trading_days`, `force_open`; DV12); `Schedule` gains trading days and the force-open flag, used by `is_open`, `next_open`, `market_status`, and the generator's snapshot check; the Market Time card gets a days dropdown with checkboxes, a Force market open switch, one Submit at the bottom of the card, and an open/closed status with a green or red dot; the Trade page badge reads "Market open" while forced open.
+  - **Tests:** R15.3, R15.5 (no day chosen), R15.7 (forced open beats hours, unchosen days, and holidays; switching it off returns to the schedule), R15.8 (one POST saves all three), R15.9 (green/red dot and text, forced-open text); days other than Monday to Friday open and close the market; `next_open` skips unchosen days; no snapshot while forced open; tampered day values are refused; migration 008 keeps existing schedules on Monday to Friday.
+  - **Depends on:** 2.4, 3.3, 4.1, 4.5 · **Requirements:** R15, D29 · **Design:** Market clock, Data model (DV12), Pages and routes
+
 - [ ] **Checkpoint 6**
   - Manual: starting with `APP_ENV=production` and an unsafe setting (debug on, weak key) is refused; a backup is restored into a scratch database and the data checks out.
 
@@ -374,7 +380,7 @@ Nothing is parked: every open question has been answered (see Decisions in `docs
 | R12 Withdraw | 3.1, 5.2 |
 | R13 History | 4.4 |
 | R14 Stock management | 2.3, 4.5 |
-| R15 Market schedule | 1.4, 2.4, 4.5 |
+| R15 Market schedule | 1.4, 2.4, 4.5, 6.3 |
 | R16 Price generator | 1.6, 2.3, 3.3 |
 | R17 Audit trail | 1.1, 3.1, 5.2, 5.5 |
 | R18 First-login password change | 3.5, 4.5, 5.3 |
@@ -418,7 +424,7 @@ For tools and AI agents that schedule work. **The Depends on lines above are the
     { "wave": 3, "after": "CP2", "tasks": ["3.1", "3.2", "3.3", "3.5", "3.6"],          "checkpoint": "CP3" },
     { "wave": 4, "after": "CP3", "tasks": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6"],   "checkpoint": "CP4" },
     { "wave": 5, "after": "CP4", "tasks": ["5.1", "5.2", "5.3", "5.4", "5.5", "5.6"],   "checkpoint": "CP5" },
-    { "wave": 6, "after": "CP5", "tasks": ["6.1", "6.2"],                               "checkpoint": "CP6" }
+    { "wave": 6, "after": "CP5", "tasks": ["6.1", "6.2", "6.3"],                        "checkpoint": "CP6" }
   ],
   "depends_on": {
     "0.1": [],
@@ -451,7 +457,8 @@ For tools and AI agents that schedule work. **The Depends on lines above are the
     "5.5": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6"],
     "5.6": ["4.1", "4.2", "4.3", "4.4", "4.5", "4.6"],
     "6.1": ["5.1", "5.2", "5.3", "5.4", "5.5", "5.6"],
-    "6.2": ["5.1", "5.2", "5.3", "5.4", "5.5", "5.6"]
+    "6.2": ["5.1", "5.2", "5.3", "5.4", "5.5", "5.6"],
+    "6.3": ["2.4", "3.3", "4.1", "4.5"]
   },
   "needs_approval": {}
 }

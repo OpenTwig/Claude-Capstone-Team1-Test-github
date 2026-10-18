@@ -303,3 +303,37 @@ def test_a_failing_stale_check_never_breaks_the_page(db, signed_in, monkeypatch)
     monkeypatch.setattr(price_generator, "prices_stale", broken)
     response = signed_in.get("/account")
     assert response.status_code == 200 and "Prices may be delayed" not in response.get_data(as_text=True)
+
+
+# --- Trading days and Force market open (task 6.3; R15.4, R15.7, D23, D29) ----------------------------------
+
+def set_schedule(db, trading_days=31, force_open=False):
+    one(db, "INSERT INTO MarketSchedule (open_time, close_time, trading_days, force_open, updated_by)"
+            " VALUES ('09:00', '17:00', %s, %s, %s)", (trading_days, force_open, make_user(db)))
+
+
+def test_run_ticks_on_a_weekend_while_forced_open(db, web_app, gen, rng, fixed_clock):  # R15.4, R15.7
+    set_schedule(db, force_open=True)
+    fixed_clock(SATURDAY)
+    price_generator.run(web_app, rng=rng, sleep=lambda s: None, keep_going=passes(3))
+    assert day_row(db, gen["ACME"], SATURDAY.date()) is not None
+    assert one(db, "SELECT COUNT(*) AS n FROM SystemState WHERE state_key = 'last_price_tick'")["n"] == 1
+
+
+def test_run_ticks_on_a_chosen_weekend_day(db, web_app, gen, rng, fixed_clock):  # R15.3, R15.4
+    set_schedule(db, trading_days=(1 << 5) | (1 << 6))
+    fixed_clock(SATURDAY)
+    price_generator.run(web_app, rng=rng, sleep=lambda s: None, keep_going=passes(3))
+    assert day_row(db, gen["ACME"], SATURDAY.date()) is not None
+
+
+def test_no_snapshot_while_forced_open(db, holdings):  # D23, D29: prices are still moving
+    set_schedule(db, force_open=True)
+    assert snapshot_values(AFTER_CLOSE.astimezone(timezone.utc)) == 0 and snapshots(db) == {}
+
+
+def test_snapshot_after_the_close_of_a_chosen_weekend_day(db, holdings):  # D23, D29
+    set_schedule(db, trading_days=1 << 5)                     # Saturdays only
+    saturday_evening = SATURDAY.replace(hour=18)
+    assert snapshot_values(saturday_evening.astimezone(timezone.utc)) == 2
+    assert snapshot_values(AFTER_CLOSE.astimezone(timezone.utc)) == 0   # Monday is no longer a trading day

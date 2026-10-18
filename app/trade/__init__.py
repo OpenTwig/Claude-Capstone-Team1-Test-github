@@ -37,8 +37,10 @@ TICKET_FIELDS = ("action", "unit", "amount", "order_type", "timing")
 # --- Helpers ------------------------------------------------------------------------------------------
 
 def market_text(status: MarketStatus) -> str:
-    """"Market open · closes 5:00 PM" / "Market closed · opens Mon 9:00 AM" (R8.2)."""
+    """"Market open · closes 5:00 PM" / "Market closed · opens Mon 9:00 AM" (R8.2); "Market open" while forced open (D29)."""
     if status.is_open:
+        if status.closes_at is None:
+            return "Market open"
         return f"Market open · closes {status.closes_at.strftime('%I:%M %p').lstrip('0')}"
     if status.next_open is None:
         return "Market closed"

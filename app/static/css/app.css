@@ -168,3 +168,10 @@
 .admin-table {
   --bs-table-bg: transparent;
 }
+
+/* Market Time status dot (R15.9): green open, red closed; the text next to it says the same. */
+.market-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+}

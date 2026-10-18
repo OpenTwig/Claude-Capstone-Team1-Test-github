@@ -60,7 +60,8 @@ FORMS = {
                   {"company_name": "New Company", "symbol": "NEWCO", "price": "42.18", "shares": "1000",
                    "exchange": "NASDAQ", "description": "Solar."},
                   'data-error="add_stock:{field}"', "Issuer"),
-    "schedule": ("admin", "/admin/market-schedule", {"open_time": "08:30", "close_time": "16:00"},
+    "schedule": ("admin", "/admin/market-schedule",
+                 {"open_time": "08:30", "close_time": "16:00", "trading_days": ["0", "1", "2", "3", "4"], "force_open": ""},
                  'data-error="schedule:{field}"', "MarketSchedule"),
     "portfolio": ("customer", "/account/portfolios", {"account_name": "Retirement", "account_type": "Brokerage"},
                   'data-error="{field}"', "Portfolio"),
@@ -108,6 +109,10 @@ CASES = {
     "schedule": {
         "open_time": [("08:30", True), ("", False), ("25:00", False), ("8am", False)],   # open >= close: see close_time
         "close_time": [("16:00", True), ("", False), ("24:00", False), ("08:30", False), ("08:00", False)],
+        # A list is several checked boxes; [] is none checked (R15.3, R15.5, D29).
+        "trading_days": [(["0", "1", "2", "3", "4"], True), (["5", "6"], True), ("0", True), ("6", True), ([], False),
+                         ("7", False), ("-1", False), ("Monday", False), ("", False), (["0", "9"], False)],
+        "force_open": [("on", True), ("", True)],   # R15.7: anything but "on" leaves it off
     },
     "portfolio": {
         "account_name": text_cases(100),
@@ -175,7 +180,7 @@ def test_form_field_boundaries(db, web_app, world, form, field, value, ok):  # N
     who, url, valid, marker, table = FORMS[form]
     client = web_app.test_client()
     login(client, "admin@example.test" if who == "admin" else "c@example.test", PASSWORD)
-    data = {k: v.format(**world) for k, v in valid.items()}
+    data = {k: v.format(**world) if isinstance(v, str) else v for k, v in valid.items()}
     data[field] = value
     data["csrf_token"] = csrf_token(client, "/admin" if who == "admin" else "/account")
     before = counts(db)

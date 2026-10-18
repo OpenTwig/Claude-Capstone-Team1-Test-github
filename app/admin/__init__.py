@@ -1,4 +1,4 @@
-"""Administration page (wf-6): users, stocks, and market hours (R3, R14, R15, R18.9-R18.10, D19-D21).
+"""Administration page (wf-6): users, stocks, and market hours (R3, R14, R15, R18.9-R18.10, D19-D21, D29).
 
 Administrators only; everyone else gets 403 (R2.4, D19). Every form re-renders the page with the
 error next to its field. A temporary password (a new user's, or one issued from the Users list)
@@ -18,11 +18,13 @@ from app.money import parse_money, parse_shares
 from app.services import market, stocks, users, validation, valuation
 from app.services.paging import page_number, page_numbers
 from app.services.stocks import DESCRIPTION_MAX
+from app.trade import market_text
 
 bp = Blueprint("admin", __name__)
 
 USER_FIELDS = ("name", "ssn", "email", "date_of_birth", "role", "access_level", "department")
 STOCK_FIELDS = ("company_name", "symbol", "price", "shares", "exchange", "description")
+DAY_VALUES = ("0", "1", "2", "3", "4", "5", "6")  # Trading Days checkbox values: date.weekday() numbers (D29)
 
 
 def _pages(source) -> dict:
@@ -42,6 +44,13 @@ def _page(*, forms: dict | None = None, errors: dict | None = None, notice: dict
     `notice` is a one-time temporary password to show; `editing` keeps that edit form open after an error.
     """
     schedule = market.current_schedule()
+    now = market.current_status()
+    schedule_form = (forms or {}).get("schedule")  # after an error, show what was submitted
+    if schedule_form:
+        chosen_days = {int(v) for v in schedule_form["trading_days"] if v in DAY_VALUES}
+        force_on = schedule_form["force_open"] == "on"
+    else:
+        chosen_days, force_on = schedule.trading_days, schedule.force_open
     user_page = users.list_users_page(users_page)
     stock_page = valuation.admin_stocks(stocks_page)
     html = render_template(
@@ -50,7 +59,9 @@ def _page(*, forms: dict | None = None, errors: dict | None = None, notice: dict
         user_page_numbers=page_numbers(user_page.page, user_page.pages),
         stock_page=stock_page,
         stock_page_numbers=page_numbers(stock_page.page, stock_page.pages),
-        schedule=schedule,
+        schedule=schedule, weekday_names=market.WEEKDAY_NAMES, chosen_days=chosen_days, force_on=force_on,
+        days_text=market.days_text, days_short=market.days_short,
+        market_open=now.is_open, market_state=_market_state(now),
         forms=forms or {}, errors=errors or {}, notice=notice, editing=editing,
         roles=users.ROLES, description_max=DESCRIPTION_MAX,
         temp_days=current_app.config["SETTINGS"].temp_password_days,
@@ -87,6 +98,20 @@ def _time(text: str, field: str, label: str):
         return datetime.strptime(text, "%H:%M").time()
     except ValueError as exc:
         raise ValidationFailed(field, f"Enter the {label} as HH:MM.") from exc
+
+
+def _days(values: list[str]) -> set[int]:
+    """The checked Trading Days boxes, as weekday numbers (0 = Monday). Anything else was tampered with."""
+    if not all(v in DAY_VALUES for v in values):
+        raise ValidationFailed("trading_days", "Choose trading days from Monday to Sunday.")
+    return {int(v) for v in values}  # save_schedule reports an empty choice (R15.5)
+
+
+def _market_state(status) -> str:
+    """The Market Time card's status line (R15.9)."""
+    if status.forced_open:
+        return "Market open · opened manually"
+    return market_text(status)
 
 
 @bp.get("/admin")
@@ -199,20 +224,27 @@ def delist_stock(issuer_id: int):
     return _back("stocks")
 
 
-# --- Market Time (R15, D21) ------------------------------------------------------------------------------
+# --- Market Time (R15, D21, D29) -------------------------------------------------------------------------
 
 @bp.post("/admin/market-schedule")
 @admin_required
 def save_schedule():
     values = {k: request.form.get(k, "") for k in ("open_time", "close_time")}
+    values["trading_days"] = request.form.getlist("trading_days")
+    values["force_open"] = "on" if request.form.get("force_open") == "on" else ""
     try:
         market.save_schedule(current_user.user_id, _time(values["open_time"], "open_time", "open time"),
-                             _time(values["close_time"], "close_time", "close time"))  # R15.3-R15.5
+                             _time(values["close_time"], "close_time", "close time"),
+                             _days(values["trading_days"]), values["force_open"] == "on")  # R15.3-R15.5, R15.7, R15.8
     except ValidationFailed as exc:
         return _page(forms={"schedule": values}, errors={"schedule": {exc.field: exc.message}})
     schedule = market.current_schedule()
-    flash(f"Market hours saved: {schedule.open_time.strftime('%I:%M %p').lstrip('0')} to "
-          f"{schedule.close_time.strftime('%I:%M %p').lstrip('0')} Arizona time, every trading day.", "success")
+    message = (f"Market hours saved: {schedule.open_time.strftime('%I:%M %p').lstrip('0')} to "
+               f"{schedule.close_time.strftime('%I:%M %p').lstrip('0')} Arizona time, "
+               f"{market.days_text(schedule.trading_days)}.")
+    if schedule.force_open:
+        message += " Force market open is on: the market stays open until it is switched off."
+    flash(message, "success")
     return redirect(url_for("admin.index"))
 
 

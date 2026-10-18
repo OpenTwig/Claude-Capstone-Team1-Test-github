@@ -156,14 +156,19 @@
       </section>
     </div>
 
-    {# Market Time: open and close times only, every trading day (R15.3-R15.5, D21). #}
+    {# Market Time: status, hours, trading days, and Force market open, all saved by one Submit (R15.3-R15.9, D21, D29). #}
     <div class="col-lg-4">
       <section class="card h-100" data-market-time>
         <h2 class="card-header h5 mb-0">Market Time</h2>
-        <form method="post" action="{{ url_for('admin.save_schedule') }}" class="card-body" novalidate>
+        <form method="post" action="{{ url_for('admin.save_schedule') }}" class="card-body d-flex flex-column" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <p class="small text-body-secondary" data-current-hours>
-            Now open {{ time_text(schedule.open_time) }} to {{ time_text(schedule.close_time) }} Arizona time, Monday to Friday, except market holidays.
+          {# The market right now (R15.9): the dot is decoration; the text says it too. #}
+          <div class="d-flex align-items-center gap-2" data-market-status="{{ 'open' if market_open else 'closed' }}">
+            <span class="market-dot rounded-circle {{ 'bg-success' if market_open else 'bg-danger' }}" aria-hidden="true"></span>
+            <span class="fw-semibold">{{ market_state }}</span>
+          </div>
+          <p class="small text-body-secondary mt-2" data-current-hours>
+            Hours: {{ time_text(schedule.open_time) }} to {{ time_text(schedule.close_time) }} Arizona time, {{ days_text(schedule.trading_days) }}, except market holidays.
           </p>
           <div class="row g-3">
             <div class="col-6">
@@ -178,8 +183,37 @@
                      value="{{ value('schedule', 'close_time', schedule.close_time.strftime('%H:%M')) }}">
               {{ error("schedule", "close_time") }}
             </div>
+            {# Trading Days (R15.3): checkboxes in a dropdown; admin.js keeps the button's summary current. #}
+            <div class="col-12">
+              <label class="form-label" for="trading-days">Trading Days</label>
+              <div class="dropdown" data-days-dropdown>
+                <button class="form-select text-start{{ invalid('schedule', 'trading_days') }}" type="button" id="trading-days"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+                        data-days-label>{{ days_short(chosen_days) if chosen_days else "No days selected" }}</button>
+                <div class="dropdown-menu w-100 px-3 py-2" aria-labelledby="trading-days">
+                  {% for name in weekday_names %}
+                    <div class="form-check py-1">
+                      <input class="form-check-input" type="checkbox" name="trading_days" value="{{ loop.index0 }}" id="day-{{ loop.index0 }}"
+                             data-day="{{ name[:3] }}"{% if loop.index0 in chosen_days %} checked{% endif %}>
+                      <label class="form-check-label" for="day-{{ loop.index0 }}">{{ name }}</label>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {{ error("schedule", "trading_days") }}
+            </div>
+            {# Force market open (R15.7): open at every moment until switched off. #}
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="force-open" name="force_open"
+                       aria-describedby="force-open-help"{% if force_on %} checked{% endif %}>
+                <label class="form-check-label" for="force-open">Force market open</label>
+              </div>
+              <div class="form-text" id="force-open-help">Keeps the market open outside the hours, on other days, and on holidays, until it is switched off.</div>
+            </div>
           </div>
-          <div class="d-flex justify-content-end mt-3">
+          {# One Submit for everything, pinned to the bottom of the card (R15.8). #}
+          <div class="d-flex justify-content-end mt-auto pt-3">
             <button type="submit" class="btn btn-primary">Submit</button>
           </div>
         </form>

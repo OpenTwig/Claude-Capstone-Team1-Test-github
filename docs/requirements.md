@@ -97,7 +97,7 @@ Decisions made by the team that resolve gaps or conflicts in the SAD.
 | D18 | Trending Stocks (was Q5): the 5 stocks with the most customer trades today (A19). |
 | D19 | Administrator accounts (was Q7): created from Add User by choosing Administrator (with access level and department). Administrators manage the system and do not trade: they hold no portfolios, their menu is Stocks, Administration, and History, and customer-only pages refuse them. |
 | D20 | Editing and removing (was Q8): administrators can edit a user's name, email, and date of birth (not SSN or role) and a stock's name, description, and exchange (not symbol or price; prices come only from the generator). Deleting a stock *delists* it: it disappears from search and can't be bought, but customers who hold it can still sell. |
-| D21 | Market Time form (was Q9): open and close times only, no dates; the hours apply every trading day until changed. |
+| D21 | Market Time form (was Q9): open and close times only, no dates; the hours apply every trading day until changed. *(Extended by D29: the form also picks the trading days and can force the market open.)* |
 | D22 | Reinvest? column (was Q11): shown on Positions as a Yes/No toggle the customer can change; it has no effect, since there are no dividends. |
 | D23 | Value charts and YTD (was Q12): the price generator saves each portfolio's value once per trading day after the close; charts plot those snapshots, and YTD change = value change since the start of the year minus net deposits this year. |
 | D24 | Support panel (was Q13): contact information (a support email address and hours, from configuration). |
@@ -106,6 +106,7 @@ Decisions made by the team that resolve gaps or conflicts in the SAD.
 | D26 | Percentages on Summary and Positions (R5.1, R6.2, asked at task 4.2; the specs said only "% of total"): brokerage style. Day change % = day change ÷ value at the previous close (value − day change); YTD change % = YTD change ÷ (value at the start of the year + net money put in this year); Gain/loss % = gain/loss ÷ cost basis. A position's Day Change % equals its Price Change %. When the base is $0.00 the percentage shows 0.00%. |
 | D27 | Thousands separators (asked for by the team, 2026-09-29): every money and share-quantity box accepts commas grouping the whole part in threes ("1,000", "25,000.50", "1,000,000.5"). Commas anywhere else ("1,00", "10,00", ",100") are refused rather than guessed, so a decimal comma is never misread. Applies to transfers, the Trade ticket, and Add Stocks (price and number of shares). |
 | D28 | Hosting in two stages (the team's decision, 2026-09-29, at task 6.1): first **self-hosted** on the team's own servers, in an Ubuntu-based Proxmox LXC container published through a Cloudflare Tunnel; later the **cloud** (AWS) layout in the SAD's network topology. Self-hosted, Cloudflare terminates HTTPS and filters traffic. `cloudflared` forwards to Gunicorn either from inside the container (on 127.0.0.1) or from a separate tunnel VM, with the container's port firewalled to that VM alone; the team's setup uses a tunnel VM and the container at 10.1.0.14. MySQL runs in the same container. Both stages run with `APP_ENV=production` and meet N1–N3's security goals; the 99.9% availability target (N3.3) belongs to the cloud stage, since one container has no failover. |
+| D29 | Market days and manual open (asked for by the user, 2026-10-18, at task 6.3). The Market Time form also chooses **which days of the week** the market opens (any of Monday–Sunday, at least one; Monday to Friday by default, AR05), from a dropdown list of checkboxes. A **Force market open** switch keeps the market open at all times, outside the hours, on days not chosen, and on holidays, until an administrator switches it off; there is no "force closed". Holidays still close the market on the chosen days unless it is forced open. Times, days, and the switch are saved together by the form's one Submit button, at the bottom of the card. The Market Time card shows whether the market is open or closed now, with a green or red dot. Randomize History (A9) still uses weekdays. While forced open the day's value snapshot (D23) waits until the market actually closes. |
 
 ---
 
@@ -369,16 +370,19 @@ Decisions made by the team that resolve gaps or conflicts in the SAD.
 
 **User Story:** As an administrator, I want to control when the market is open, so that trading hours are consistent and documented.
 
-**Sources:** WF6 Administration Page (Market Time); AR04, AR05; D4
+**Sources:** WF6 Administration Page (Market Time); AR04, AR05; D4, D21, D29
 
 #### Acceptance Criteria
 
 1. By default the market SHALL be open Monday through Friday, 9:00 AM to 5:00 PM Arizona time (D6), and closed on holidays (AR05).
 2. The system SHALL determine holidays from a hard-coded list or a holiday library such as the NYSE calendar (D4). Administrators SHALL NOT manage holidays.
-3. The Market Time form SHALL let an administrator change the market's hours (AR04) using an open time and a close time; the new hours apply every trading day until changed (D21).
+3. The Market Time form SHALL let an administrator change the market's hours (AR04) using an open time and a close time, and the days of the week it opens (any of Monday to Sunday) from a dropdown list of checkboxes; the new settings apply until changed (D21, D29).
 4. WHEN an administrator saves a valid schedule THEN the system SHALL apply it to all market-open checks and the price generator.
-5. IF the end is not after the start THEN the system SHALL display a validation error and keep the current schedule.
+5. IF the end is not after the start, or no day is chosen ("Select at least one trading day."), THEN the system SHALL display a validation error and keep the current schedule.
 6. The Trade page SHALL show whether the market is currently open or closed.
+7. The Market Time form SHALL have a Force market open switch. WHILE it is on, the market SHALL be open at every moment, including outside the hours, on days not chosen, and on holidays, until an administrator switches it off (D29).
+8. The form's times, days, and switch SHALL be saved together by one Submit button at the bottom of the Market Time card (D29).
+9. The Market Time card SHALL show whether the market is open or closed now, with a green dot when open and a red dot when closed, and when it next closes or opens, or that it was opened manually (D29).
 
 ### Requirement 16: Random stock price generator
 

@@ -98,3 +98,67 @@ def test_time_columns_are_read_back_as_times_of_day():
 
     assert market._as_time(timedelta(hours=9, minutes=30, seconds=5)) == time(9, 30, 5)
     assert market._as_time(time(16, 45)) == time(16, 45)
+
+
+# --- Trading days and Force market open (task 6.3; R15.3, R15.7, R15.8, D29) --------------------------------
+
+SATURDAY = datetime(2026, 9, 26, 12, 0, tzinfo=AZ)
+THANKSGIVING = datetime(2026, 11, 26, 12, 0, tzinfo=AZ)
+
+
+def test_saved_trading_days_change_every_market_open_check(admin):  # R15.3, R15.4
+    market.save_schedule(admin, time(9), time(17), {5, 6})
+    assert market.current_schedule().trading_days == {5, 6}
+    assert market.is_market_open(SATURDAY)
+    assert not market.is_market_open(az(12, 0))                       # Monday
+    assert market.current_status(az(12, 0)).next_open == datetime(2026, 10, 3, 9, 0, tzinfo=AZ)
+
+
+def test_force_open_is_saved_and_beats_hours_days_and_holidays(admin):  # R15.7, R15.8
+    market.save_schedule(admin, time(10), time(15), {0}, force_open=True)
+    saved = market.current_schedule()
+    assert (saved.open_time, saved.close_time, saved.trading_days, saved.force_open) == (time(10), time(15), {0}, True)
+    for moment in (SATURDAY, THANKSGIVING, az(3, 0), az(23, 0)):
+        assert market.is_market_open(moment), moment
+    status = market.current_status(SATURDAY)
+    assert status.is_open and status.forced_open and status.closes_at is None
+
+
+def test_force_open_lasts_until_it_is_switched_off(admin):  # R15.7
+    market.save_schedule(admin, time(9), time(17), force_open=True)
+    assert market.is_market_open(SATURDAY)
+    market.save_schedule(admin, time(9), time(17), force_open=False)
+    assert not market.current_schedule().force_open
+    assert not market.is_market_open(SATURDAY)
+    assert market.is_market_open(az(12, 0))
+
+
+@pytest.mark.parametrize("days, message", [
+    (set(), "Select at least one trading day."),
+    (None, "Select at least one trading day."),
+    ({0, 7}, "Choose trading days from Monday to Sunday."),
+])
+def test_invalid_trading_days_are_rejected_and_the_old_schedule_stays(db, admin, days, message):  # R15.5
+    market.save_schedule(admin, time(10), time(15), {1, 3})
+    with pytest.raises(ValidationFailed) as exc:
+        market.save_schedule(admin, time(9), time(17), days, force_open=True)
+    assert exc.value.field == "trading_days" and exc.value.message == message
+    assert market.current_schedule() == market.Schedule(time(10), time(15), {1, 3})
+    assert count(db) == 1
+
+
+def test_days_are_stored_as_a_bit_mask(db, admin):  # DV12
+    market.save_schedule(admin, time(9), time(17), {0, 2, 6}, force_open=True)
+    with db.cursor() as cur:
+        cur.execute("SELECT trading_days, force_open FROM MarketSchedule")
+        saved = cur.fetchone()
+    db.commit()
+    assert saved["trading_days"] == 1 + 4 + 64 and saved["force_open"] == 1
+
+
+def test_a_schedule_saved_before_migration_008_stays_monday_to_friday(db, admin):  # DV12
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO MarketSchedule (open_time, close_time, updated_by) VALUES ('10:00', '15:00', %s)", (admin,))
+    db.commit()
+    assert market.current_schedule() == market.Schedule(time(10), time(15), market.MON_TO_FRI, False)
+    assert not market.is_market_open(SATURDAY.replace(hour=11))

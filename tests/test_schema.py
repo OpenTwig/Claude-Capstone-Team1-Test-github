@@ -400,3 +400,19 @@ def test_admin_factory_links_to_a_user(db):
     admin_id, user_id = make_admin(db)
     row = run(db, "SELECT u.name FROM Admin a JOIN `User` u ON u.userID = a.userID WHERE a.adminID = %s", (admin_id,))
     assert row[0]["name"] == "Test Admin"
+
+
+@pytest.mark.parametrize("days", [0, 128])
+def test_market_schedule_needs_one_to_seven_trading_days(db, owner, days):  # R15.5, DV12
+    with mysql_error(db, CHECK_VIOLATION):
+        run(db, "INSERT INTO MarketSchedule (open_time, close_time, trading_days, updated_by) VALUES ('09:00', '17:00', %s, %s)",
+            (days, owner.user))
+
+
+def test_market_schedule_defaults_to_monday_to_friday_not_forced(db, owner):  # DV12, AR05
+    run(db, "INSERT INTO MarketSchedule (open_time, close_time, updated_by) VALUES ('09:00', '17:00', %s)", (owner.user,))
+    with db.cursor() as cur:
+        cur.execute("SELECT trading_days, force_open FROM MarketSchedule")
+        saved = cur.fetchone()
+    db.commit()
+    assert (saved["trading_days"], saved["force_open"]) == (31, 0)
