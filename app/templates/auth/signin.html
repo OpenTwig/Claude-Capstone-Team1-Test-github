@@ -9,24 +9,24 @@
           {% if error %}
             <div class="alert alert-danger" role="alert" data-login-error>{{ error }}</div>
           {% endif %}
-          <form method="post" action="{{ url_for('auth.signin') }}" novalidate>
-            {{ form.csrf_token }}
+          <form method="post" action="{{ url_for('auth.signin') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-3">
-              {{ form.email.label(class="form-label") }}
-              {{ form.email(class="form-control" ~ (" is-invalid" if form.email.errors else ""), type="email", autocomplete="username", placeholder="Email") }}
-              {% for message in form.email.errors %}<div class="invalid-feedback">{{ message }}</div>{% endfor %}
+              <label class="form-label" for="email">Email</label>
+              <input class="form-control" type="email" id="email" name="email" value="{{ email }}" autocomplete="username"
+                     placeholder="Email" maxlength="320" required>
             </div>
             <div class="mb-3">
-              {{ form.password.label(class="form-label") }}
-              {{ form.password(class="form-control" ~ (" is-invalid" if form.password.errors else ""), autocomplete="current-password", placeholder="Password") }}
-              {% for message in form.password.errors %}<div class="invalid-feedback">{{ message }}</div>{% endfor %}
+              <label class="form-label" for="password">Password</label>
+              <input class="form-control" type="password" id="password" name="password" autocomplete="current-password"
+                     placeholder="Password" required>
             </div>
             <div class="form-check mb-3">
-              {{ form.stay_signed_in(class="form-check-input") }}
-              {{ form.stay_signed_in.label(class="form-check-label") }}
+              <input class="form-check-input" type="checkbox" id="stay_signed_in" name="stay_signed_in" value="y">
+              <label class="form-check-label" for="stay_signed_in">Stay signed in</label>
             </div>
             <p class="text-body-secondary small text-center mb-4" data-first-login-note>New users will need to reset password upon first login.</p>
-            {{ form.submit(class="btn btn-primary w-100") }}
+            <button type="submit" class="btn btn-primary w-100">Submit</button>
           </form>
         </div>
       </div>

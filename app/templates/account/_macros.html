@@ -1,56 +1,54 @@
-{# Shared pieces of the Summary and Positions pages (wf-3, wf-4). #}
+{# Pieces shared by the Account and Positions pages. A macro is like a Python function that
+   returns HTML. A page uses them with: {% from "account/_macros.html" import value_chart, ... %}
+   (change() and chart_numbers() are in the shared _macros.html.) #}
 
-{% macro signed(amount, pct=none) -%}
-  {# A change in dollars (and percent): sign and colour both show the direction (not colour alone). #}
-  {%- set cls = "text-success" if amount > 0 else ("text-danger" if amount < 0 else "") -%}
-  <span class="{{ cls }}">{{ "+" if amount > 0 }}{{ amount | money }}{% if pct is not none %} ({{ "+" if pct > 0 }}{{ pct }}%){% endif %}</span>
-{%- endmacro %}
 
-{% macro signed_pct(pct) -%}
-  {# A percentage change, coloured like the dollar change next to it. #}
-  {%- set cls = "text-success" if pct > 0 else ("text-danger" if pct < 0 else "") -%}
-  <span class="{{ cls }}">{{ "+" if pct > 0 }}{{ pct }}%</span>
-{%- endmacro %}
+{# A percentage change on its own, like "+1.25%". #}
+{% macro percent_change(percent) %}
+  {% if percent > 0 %}
+    <span class="text-success">+{{ percent }}%</span>
+  {% elif percent < 0 %}
+    <span class="text-danger">{{ percent }}%</span>
+  {% else %}
+    <span>{{ percent }}%</span>
+  {% endif %}
+{% endmacro %}
 
-{% macro stat(label, key) -%}
-  <div class="col-6 col-md-auto" data-stat="{{ key }}">
-    <div class="small text-body-secondary">{{ label }}</div>
-    <div class="fs-5 fw-semibold">{{ caller() }}</div>
-  </div>
-{%- endmacro %}
 
-{% macro value_chart(label) -%}
+{# The value-over-time chart. charts.js draws it from the numbers put in the page by chart_numbers(). #}
+{% macro value_chart(label) %}
   <div class="value-chart mt-3">
     <canvas id="value-chart" role="img" aria-label="{{ label }}"></canvas>
   </div>
-  <p class="small text-body-secondary mb-0 mt-2" data-chart-note hidden>
-    The chart gains a point each trading day after the market closes; today's point is the live value.
+  <p class="small text-body-secondary mb-0 mt-2">
+    The chart gets a new point after each trading day's close. The last point is today's value.
   </p>
-{%- endmacro %}
+{% endmacro %}
 
-{% macro more_info(id) -%}
-  <button class="btn btn-link btn-sm p-0" type="button" data-bs-toggle="collapse" data-bs-target="#{{ id }}"
-          aria-expanded="false" aria-controls="{{ id }}">More information</button>
-{%- endmacro %}
 
-{% macro definitions(id) -%}
-  {# What the numbers mean (Calculations table, D23, D26). #}
-  <div class="collapse" id="{{ id }}">
+{# The "More information" box that explains what the numbers mean. #}
+{% macro explanations(box_id) %}
+  <button class="btn btn-link btn-sm p-0" type="button" data-bs-toggle="collapse"
+          data-bs-target="#{{ box_id }}" aria-expanded="false" aria-controls="{{ box_id }}">
+    More information
+  </button>
+  <div class="collapse" id="{{ box_id }}">
     <dl class="small text-body-secondary row mb-0 mt-3 border-top pt-3">
-      <dt class="col-sm-3 fw-semibold">Total / Account Value</dt>
-      <dd class="col-sm-9">Cash plus the market value of every stock held (shares × current price).</dd>
-      <dt class="col-sm-3 fw-semibold">Day Change</dt>
-      <dd class="col-sm-9">How much the stocks' value moved since the previous trading day's close. The percentage is of the value at that close.</dd>
-      <dt class="col-sm-3 fw-semibold">Year to date Change</dt>
-      <dd class="col-sm-9">Value now, minus the value on 1 January, minus money deposited or moved in this year (plus money taken out), so deposits don't count as gains. The percentage is of the start-of-year value plus the money put in.</dd>
-      <dt class="col-sm-3 fw-semibold">Cost Basis</dt>
-      <dd class="col-sm-9">What the shares cost: shares × average price paid.</dd>
-      <dt class="col-sm-3 fw-semibold">Gain/Loss</dt>
-      <dd class="col-sm-9 mb-0">Market value minus cost basis. The percentage is of the cost basis.</dd>
+      <dt class="col-sm-3">Total / Account Value</dt>
+      <dd class="col-sm-9">Cash plus what every stock is worth (shares × current price).</dd>
+
+      <dt class="col-sm-3">Day Change</dt>
+      <dd class="col-sm-9">How much the stocks' value moved since yesterday's close.</dd>
+
+      <dt class="col-sm-3">Year to date Change</dt>
+      <dd class="col-sm-9">The value now, minus the value on 1 January, minus any money put in since then,
+        so deposits don't count as gains.</dd>
+
+      <dt class="col-sm-3">Cost Basis</dt>
+      <dd class="col-sm-9">What the shares cost: shares × the average price paid.</dd>
+
+      <dt class="col-sm-3">Gain/Loss</dt>
+      <dd class="col-sm-9 mb-0">What the shares are worth now, minus what they cost.</dd>
     </dl>
   </div>
-{%- endmacro %}
-
-{% macro chart_data(chart) -%}
-  <script type="application/json" id="chart-data">{{ chart | tojson }}</script>
-{%- endmacro %}
+{% endmacro %}

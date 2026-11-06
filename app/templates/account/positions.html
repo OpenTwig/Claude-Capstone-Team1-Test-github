@@ -1,120 +1,144 @@
 {% extends "base.html" %}
-{% from "account/_macros.html" import signed, signed_pct, stat, value_chart, more_info, definitions, chart_data %}
+{% from "_macros.html" import change, chart_numbers, chart_scripts %}
+{% from "account/_macros.html" import percent_change, value_chart, explanations %}
 {% block title %}Positions · Stock Trading System{% endblock %}
 
 {% block content %}
   <h1 class="h3 mb-3">Positions</h1>
 
   {% if view is none %}
-    <div class="alert alert-info" role="alert" data-no-portfolio>You don't have a portfolio yet.
-      <a href="{{ url_for('account.summary') }}" class="alert-link">Create one on your Account page</a> first.</div>
+    <div class="alert alert-info" role="alert">
+      You don't have a portfolio yet.
+      <a href="{{ url_for('account.summary') }}" class="alert-link">Create one on your Account page</a> first.
+    </div>
   {% else %}
-    {% set p, t, e = view.portfolio, view.totals, view.equities %}
-    {# Portfolio selector: Account Name and the last 4 of the account number (R6.1). #}
-    <form method="get" action="{{ url_for('account.positions_page') }}" class="d-flex flex-wrap align-items-center gap-2 mb-4" data-portfolio-form>
-      <label class="visually-hidden" for="portfolio">Portfolio</label>
-      <select class="form-select w-auto" id="portfolio" name="portfolio">
-        {% for o in portfolios %}
-          <option value="{{ o.portfolio_id }}"{% if o.portfolio_id == p.portfolio_id %} selected{% endif %}>{{ o.account_name }} {{ o.masked_account_number }}</option>
+    {% set portfolio = view.portfolio %}
+    {% set totals = view.totals %}
+    {% set equities = view.equities %}
+
+    {# ---- Choose which portfolio to show ---- #}
+    <form method="get" action="{{ url_for('account.positions_page') }}" class="d-flex flex-wrap gap-2 mb-4">
+      <select class="form-select w-auto" name="portfolio" aria-label="Portfolio">
+        {% for p in portfolios %}
+          <option value="{{ p.portfolio_id }}" {% if p.portfolio_id == portfolio.portfolio_id %}selected{% endif %}>
+            {{ p.account_name }} {{ p.masked_account_number }}
+          </option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn btn-outline-secondary" data-portfolio-go>Show</button>
+      <button type="submit" class="btn btn-outline-secondary">Show</button>
     </form>
 
-    {# Portfolio Value (R6.2). #}
-    <section class="card mb-4" data-portfolio-value>
+    {# ---- The portfolio's totals and chart ---- #}
+    <section class="card mb-4">
       <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start gap-2">
-          <h2 class="h5 mb-3">Portfolio Value</h2>
-          {{ more_info("positions-info") }}
-        </div>
+        <h2 class="h5 mb-3">Portfolio Value</h2>
         <div class="row g-4">
-          {% call stat("Total Value", "total") %}{{ t.total_value | money }}{% endcall %}
-          {% call stat("Day Change", "day") %}{{ signed(t.day_change, t.day_change_pct) }}{% endcall %}
-          {% call stat("Year to date Change", "ytd") %}{{ signed(t.ytd_change, t.ytd_change_pct) }}{% endcall %}
-          {% call stat("Total Cost Basis", "cost") %}{{ t.cost_basis | money }}{% endcall %}
-          {% call stat("Total Gain/Loss", "gain") %}{{ signed(t.gain_loss, t.gain_loss_pct) }}{% endcall %}
+          <div class="col-6 col-md-auto">
+            <div class="small text-body-secondary">Total Value</div>
+            <div class="fs-5 fw-semibold">{{ totals.total_value | money }}</div>
+          </div>
+          <div class="col-6 col-md-auto">
+            <div class="small text-body-secondary">Day Change</div>
+            <div class="fs-5 fw-semibold">{{ change(totals.day_change, totals.day_change_pct) }}</div>
+          </div>
+          <div class="col-6 col-md-auto">
+            <div class="small text-body-secondary">Year to date Change</div>
+            <div class="fs-5 fw-semibold">{{ change(totals.ytd_change, totals.ytd_change_pct) }}</div>
+          </div>
+          <div class="col-6 col-md-auto">
+            <div class="small text-body-secondary">Total Cost Basis</div>
+            <div class="fs-5 fw-semibold">{{ totals.cost_basis | money }}</div>
+          </div>
+          <div class="col-6 col-md-auto">
+            <div class="small text-body-secondary">Total Gain/Loss</div>
+            <div class="fs-5 fw-semibold">{{ change(totals.gain_loss, totals.gain_loss_pct) }}</div>
+          </div>
         </div>
-        {{ definitions("positions-info") }}
+        {{ explanations("positions-info") }}
         {{ value_chart("Portfolio value over time") }}
       </div>
     </section>
 
-    {# Position Details (R6.3-R6.7): Equities and Cash; no Mutual Funds (D17). #}
-    <section class="card mb-4" data-position-details>
+    {# ---- One row per stock, then the cash ---- #}
+    <section class="card mb-4">
       <h2 class="card-header h5 mb-0">Position Details</h2>
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0 positions-table">
           <thead>
             <tr>
-              <th scope="col">Symbol</th>
-              <th scope="col" class="text-end">Quantity</th>
-              <th scope="col" class="text-end">Price</th>
-              <th scope="col" class="text-end">Price Change $</th>
-              <th scope="col" class="text-end">Price Change %</th>
-              <th scope="col" class="text-end">Market Value</th>
-              <th scope="col" class="text-end">Day Change $</th>
-              <th scope="col" class="text-end">Day Change %</th>
-              <th scope="col" class="text-end">Cost Basis</th>
-              <th scope="col" class="text-end">Gain/Loss $</th>
-              <th scope="col" class="text-center">Reinvest?</th>
+              <th>Symbol</th>
+              <th class="text-end">Quantity</th>
+              <th class="text-end">Price</th>
+              <th class="text-end">Price Change $</th>
+              <th class="text-end">Price Change %</th>
+              <th class="text-end">Market Value</th>
+              <th class="text-end">Day Change $</th>
+              <th class="text-end">Day Change %</th>
+              <th class="text-end">Cost Basis</th>
+              <th class="text-end">Gain/Loss $</th>
+              <th class="text-center">Reinvest?</th>
             </tr>
           </thead>
           <tbody>
-            <tr class="table-group-row">
-              <th colspan="11" scope="rowgroup">
-                <button class="btn btn-link p-0 fw-semibold text-body text-decoration-none" type="button" data-bs-toggle="collapse"
-                        data-bs-target=".equity-row" aria-expanded="true" aria-controls="{% for pos in view.positions %}equity-{{ pos.issuer_id }} {% endfor %}">Equities ▾</button>
-              </th>
-            </tr>
-            {% for pos in view.positions %}
-              <tr class="collapse show equity-row" id="equity-{{ pos.issuer_id }}" data-position="{{ pos.symbol }}">
+            <tr class="table-group-row"><th colspan="11">Equities</th></tr>
+
+            {% for position in view.positions %}
+              <tr>
                 <td>
-                  {% if pos.is_listed %}<a href="{{ url_for('stocks.detail_page', symbol=pos.symbol) }}" class="fw-semibold">{{ pos.symbol }}</a>
-                  {% else %}<span class="fw-semibold">{{ pos.symbol }}</span> <span class="badge text-bg-secondary">Delisted</span>{% endif %}
+                  {% if position.is_listed %}
+                    <a href="{{ url_for('stocks.detail_page', symbol=position.symbol) }}" class="fw-semibold">{{ position.symbol }}</a>
+                  {% else %}
+                    <span class="fw-semibold">{{ position.symbol }}</span>
+                    <span class="badge text-bg-secondary">Delisted</span>
+                  {% endif %}
                 </td>
-                <td class="text-end">{{ pos.quantity | shares }}</td>
-                <td class="text-end">{{ pos.price | money }}</td>
-                <td class="text-end">{{ signed(pos.price_change) }}</td>
-                <td class="text-end">{{ signed_pct(pos.price_change_pct) }}</td>
-                <td class="text-end" data-market-value>{{ pos.market_value | money }}</td>
-                <td class="text-end">{{ signed(pos.day_change) }}</td>
-                <td class="text-end">{{ signed_pct(pos.price_change_pct) }}</td>
-                <td class="text-end">{{ pos.cost_basis | money }}</td>
-                <td class="text-end">{{ signed(pos.gain_loss) }}</td>
+                <td class="text-end">{{ position.quantity | shares }}</td>
+                <td class="text-end">{{ position.price | money }}</td>
+                <td class="text-end">{{ change(position.price_change) }}</td>
+                <td class="text-end">{{ percent_change(position.price_change_pct) }}</td>
+                <td class="text-end">{{ position.market_value | money }}</td>
+                <td class="text-end">{{ change(position.day_change) }}</td>
+                <td class="text-end">{{ percent_change(position.price_change_pct) }}</td>
+                <td class="text-end">{{ position.cost_basis | money }}</td>
+                <td class="text-end">{{ change(position.gain_loss) }}</td>
                 <td class="text-center">
-                  {# Reinvest? Yes/No (D22): saved per position, no other effect. #}
-                  <form method="post" action="{{ url_for('account.set_reinvest', portfolio_id=p.portfolio_id, issuer_id=pos.issuer_id) }}" data-reinvest>
+                  {# The Reinvest? button saves Yes or No. Pressing it switches to the other one. #}
+                  <form method="post"
+                        action="{{ url_for('account.set_reinvest', portfolio_id=portfolio.portfolio_id, issuer_id=position.issuer_id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="reinvest" value="{{ 'no' if pos.reinvest else 'yes' }}">
-                    <button type="submit" class="btn btn-sm {{ 'btn-success' if pos.reinvest else 'btn-outline-secondary' }}"
-                            aria-label="Reinvest {{ pos.symbol }}: {{ 'Yes' if pos.reinvest else 'No' }}. Change it."
-                            aria-pressed="{{ 'true' if pos.reinvest else 'false' }}">{{ "Yes" if pos.reinvest else "No" }}</button>
+                    {% if position.reinvest %}
+                      <input type="hidden" name="reinvest" value="no">
+                      <button type="submit" class="btn btn-sm btn-success">Yes</button>
+                    {% else %}
+                      <input type="hidden" name="reinvest" value="yes">
+                      <button type="submit" class="btn btn-sm btn-outline-secondary">No</button>
+                    {% endif %}
                   </form>
                 </td>
               </tr>
             {% else %}
-              <tr class="equity-row collapse show">
-                <td colspan="11" class="text-body-secondary" data-no-positions>No stocks yet.
-                  <a href="{{ url_for('trade.trade_page', portfolio=p.portfolio_id) }}">Buy some on the Trade page</a>.</td>
+              <tr>
+                <td colspan="11" class="text-body-secondary">No stocks yet.
+                  <a href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id) }}">Buy some on the Trade page</a>.
+                </td>
               </tr>
             {% endfor %}
-            <tr class="fw-semibold" data-equities-total>
-              <th scope="row" colspan="5">Total Equities</th>
-              <td class="text-end">{{ e.positions_value | money }}</td>
-              <td class="text-end">{{ signed(e.day_change) }}</td>
-              <td class="text-end">{{ signed_pct(e.day_change_pct) }}</td>
-              <td class="text-end">{{ e.cost_basis | money }}</td>
-              <td class="text-end">{{ signed(e.gain_loss) }}</td>
+
+            <tr class="fw-semibold">
+              <th colspan="5">Total Equities</th>
+              <td class="text-end">{{ equities.positions_value | money }}</td>
+              <td class="text-end">{{ change(equities.day_change) }}</td>
+              <td class="text-end">{{ percent_change(equities.day_change_pct) }}</td>
+              <td class="text-end">{{ equities.cost_basis | money }}</td>
+              <td class="text-end">{{ change(equities.gain_loss) }}</td>
               <td></td>
             </tr>
-            <tr class="table-group-row">
-              <th colspan="11" scope="rowgroup">Cash</th>
-            </tr>
-            <tr class="fw-semibold" data-cash-total>
-              {# R6.5: the cash total is the cash balance; it doesn't change with prices. #}
-              <th scope="row" colspan="5">Total Cash</th>
-              <td class="text-end">{{ p.cash_balance | money }}</td>
+
+            <tr class="table-group-row"><th colspan="11">Cash</th></tr>
+            {# Cash doesn't change with prices, so its day change is always 0. #}
+            <tr class="fw-semibold">
+              <th colspan="5">Total Cash</th>
+              <td class="text-end">{{ portfolio.cash_balance | money }}</td>
               <td class="text-end">$0.00</td>
               <td class="text-end">0%</td>
               <td class="text-end">N/A</td>
@@ -125,11 +149,11 @@
         </table>
       </div>
     </section>
-    {{ chart_data(chart) }}
+
+    {{ chart_numbers(chart) }}
   {% endif %}
 {% endblock %}
 
 {% block scripts %}
-  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/account.js') }}"></script>
+  {{ chart_scripts() }}
 {% endblock %}

@@ -2,34 +2,56 @@
 {% block title %}Order Filled · Stock Trading System{% endblock %}
 
 {% block content %}
-  {# The order confirmation (R8.8, R9.7). #}
-  {# Centred on the page, as a single column (user feedback). #}
+  {# Shown after an order has been placed. #}
+  {% if result.action == "Buy" %}
+    {% set verb = "Bought" %}
+    {% set total_label = "Total cost" %}
+  {% else %}
+    {% set verb = "Sold" %}
+    {% set total_label = "Total proceeds" %}
+  {% endif %}
+
   <div class="order-page mx-auto">
     <h1 class="h3 mb-3">Order Filled</h1>
-    <div class="alert alert-success" role="status" data-filled>
-      {{ "Bought" if result.action == "Buy" else "Sold" }} {{ result.quantity | shares }} {{ result.symbol }} at {{ result.price | money }} for {{ result.total | money }}.
+    <div class="alert alert-success" role="status">
+      {{ verb }} {{ result.quantity | shares }} {{ result.symbol }} at {{ result.price | money }}
+      for {{ result.total | money }}.
     </div>
+
     <div class="card mb-4 order-card">
       <div class="card-body">
         <table class="table mb-3">
-          <tbody>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Order number</th>
-              <td class="text-end" data-order-number>{{ result.transaction_id }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Account</th>
-              <td class="text-end">{{ portfolio.account_name }} {{ portfolio.masked_account_number }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Filled</th>
-              <td class="text-end">{{ executed_at.strftime("%m/%d/%Y %I:%M %p") }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Price per share</th>
-              <td class="text-end">{{ result.price | money }}</td></tr>
-            <tr><th scope="row" class="fw-semibold">{{ "Total cost" if result.action == "Buy" else "Total proceeds" }}</th>
-              <td class="text-end fw-semibold">{{ result.total | money }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Cash balance now</th>
-              <td class="text-end" data-cash-after>{{ result.cash_balance | money }}</td></tr>
-          </tbody>
+          <tr>
+            <th class="fw-normal text-body-secondary">Order number</th>
+            <td class="text-end">{{ result.transaction_id }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Account</th>
+            <td class="text-end">{{ portfolio.account_name }} {{ portfolio.masked_account_number }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Filled</th>
+            <td class="text-end">{{ executed_at.strftime("%m/%d/%Y %I:%M %p") }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Price per share</th>
+            <td class="text-end">{{ result.price | money }}</td>
+          </tr>
+          <tr>
+            <th class="fw-semibold">{{ total_label }}</th>
+            <td class="text-end fw-semibold">{{ result.total | money }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Cash balance now</th>
+            <td class="text-end">{{ result.cash_balance | money }}</td>
+          </tr>
         </table>
+
         <div class="d-flex justify-content-end gap-2">
-          <a class="btn btn-outline-secondary" href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=result.symbol) }}">Trade again</a>
-          <a class="btn btn-primary" href="/positions?portfolio={{ portfolio.portfolio_id }}">View positions</a>
+          <a class="btn btn-outline-secondary"
+             href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=result.symbol) }}">Trade again</a>
+          <a class="btn btn-primary"
+             href="{{ url_for('account.positions_page', portfolio=portfolio.portfolio_id) }}">View positions</a>
         </div>
       </div>
     </div>

@@ -2,50 +2,62 @@
 {% block title %}Review Order · Stock Trading System{% endblock %}
 
 {% block content %}
-  {# The confirmation screen (R8.6, R9.5, CR04, D11): nothing has happened yet. #}
-  {% set q = order.quote %}
-  {% set req = order.request %}
-  {# Centred on the page, as a single column (user feedback). #}
+  {# The "Review Your Order" page. Nothing has been bought or sold yet. #}
+  {% set quote = order.quote %}
+  {% set details = order.request %}
+
   <div class="order-page mx-auto">
     <h1 class="h3 mb-3">Review Your Order</h1>
-    <div class="card mb-4 order-card" data-review>
+    <div class="card mb-4 order-card">
       <div class="card-body">
         <table class="table mb-3">
-          <tbody>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Account</th>
-              <td class="text-end">{{ portfolio.account_name }} {{ portfolio.masked_account_number }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Stock</th>
-              <td class="text-end" data-review-symbol>{{ q.company_name }} ({{ q.symbol }})</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Action</th>
-              <td class="text-end" data-review-action>{{ req.action }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Quantity</th>
-              <td class="text-end" data-review-quantity>{{ order.quantity | shares }} shares</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Estimated price</th>
-              <td class="text-end" data-review-price>{{ q.price | money }}</td></tr>
-            <tr><th scope="row" class="fw-semibold">Estimated total</th>
-              <td class="text-end fw-semibold" data-review-total>{{ order.total | money }}</td></tr>
-            <tr><th scope="row" class="fw-normal text-body-secondary">Order type</th>
-              <td class="text-end">{{ req.order_type }}, {{ req.timing }}</td></tr>
-          </tbody>
+          <tr>
+            <th class="fw-normal text-body-secondary">Account</th>
+            <td class="text-end">{{ portfolio.account_name }} {{ portfolio.masked_account_number }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Stock</th>
+            <td class="text-end">{{ quote.company_name }} ({{ quote.symbol }})</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Action</th>
+            <td class="text-end">{{ details.action }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Quantity</th>
+            <td class="text-end">{{ order.quantity | shares }} shares</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Estimated price</th>
+            <td class="text-end">{{ quote.price | money }}</td>
+          </tr>
+          <tr>
+            <th class="fw-semibold">Estimated total</th>
+            <td class="text-end fw-semibold">{{ order.total | money }}</td>
+          </tr>
+          <tr>
+            <th class="fw-normal text-body-secondary">Order type</th>
+            <td class="text-end">{{ details.order_type }}, {{ details.timing }}</td>
+          </tr>
         </table>
-        <p class="small text-body-secondary mb-1" data-estimate-note>
+
+        <p class="small text-body-secondary mb-1">
           The price and total are estimates: the order fills at the price at the moment you place it.
-          {% if req.unit == "Dollars" %}It will never cost more than {{ req.amount | money }}.{% endif %}
+          {% if details.unit == "Dollars" %}
+            It will never cost more than {{ details.amount | money }}.
+          {% endif %}
         </p>
-        <p class="small text-body-secondary mb-3">Placed orders can't be cancelled. This review expires in 2 minutes. {{ market_text }}.</p>
+        <p class="small text-body-secondary mb-3">Placed orders can't be cancelled. {{ market_text }}.</p>
+
         <div class="d-flex justify-content-end gap-2">
-          <a class="btn btn-outline-secondary" href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=q.symbol) }}">Change order</a>
-          <form method="post" action="{{ url_for('trade.confirm') }}" data-submit-once>
+          <a class="btn btn-outline-secondary"
+             href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=quote.symbol) }}">Change order</a>
+          <form method="post" action="{{ url_for('trade.confirm') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="nonce" value="{{ nonce }}">
             <button type="submit" class="btn btn-primary">Place order</button>
           </form>
         </div>
       </div>
     </div>
   </div>
-{% endblock %}
-
-{% block scripts %}
-  <script src="{{ url_for('static', filename='js/trade.js') }}"></script>
 {% endblock %}

@@ -1,55 +1,50 @@
-{# Shared pieces of the Stocks pages (wf-1). #}
+{# Pieces shared by the two Stocks pages. #}
+{% from "_macros.html" import change %}
 
-{% macro change(m) -%}
-  {# Sign and colour both show the direction, so it doesn't rely on colour alone. #}
-  {%- set cls = "text-success" if m.change > 0 else ("text-danger" if m.change < 0 else "text-body-secondary") -%}
-  <span class="{{ cls }}" data-change>{{ "+" if m.change > 0 }}{{ m.change | money }} ({{ "+" if m.change_pct > 0 }}{{ m.change_pct }}%)</span>
-{%- endmacro %}
 
-{% macro stock_list(movers, empty_text) -%}
-  {% if movers %}
+{# The search box at the top of both pages. #}
+{% macro search_box(query, max_length, error=none) %}
+  <form method="get" action="{{ url_for('stocks.search_page') }}" role="search" class="mb-5 stock-search mx-auto">
+    <div class="input-group">
+      <input class="form-control {% if error %}is-invalid{% endif %}" type="search" name="q" value="{{ query }}"
+             placeholder="Symbol or company" aria-label="Search stocks by symbol or company name"
+             maxlength="{{ max_length }}">
+      <button class="btn btn-primary" type="submit">Search</button>
+    </div>
+    {% if error %}
+      <div class="invalid-feedback d-block">{{ error }}</div>
+    {% endif %}
+  </form>
+{% endmacro %}
+
+
+{# A list of stocks, each with a small 30-day chart (a "sparkline") drawn by charts.js. #}
+{% macro stock_list(stocks, empty_message) %}
+  {% if stocks %}
     <ul class="list-group list-group-flush">
-      {% for m in movers %}
-        <li class="list-group-item px-2" data-symbol="{{ m.symbol }}">
-          <a class="d-flex align-items-center gap-2 text-body text-decoration-none" href="{{ url_for('stocks.detail_page', symbol=m.symbol) }}">
+      {% for stock in stocks %}
+        <li class="list-group-item px-2">
+          <a class="d-flex align-items-center gap-2 text-body text-decoration-none"
+             href="{{ url_for('stocks.detail_page', symbol=stock.symbol) }}">
             <span class="flex-grow-1 min-width-0">
-              <span class="d-block fw-semibold">{{ m.symbol }}</span>
-              <span class="d-block small text-body-secondary text-truncate">{{ m.company_name }}</span>
+              <span class="d-block fw-semibold">{{ stock.symbol }}</span>
+              <span class="d-block small text-body-secondary text-truncate">{{ stock.company_name }}</span>
             </span>
-            <span class="sparkline"><canvas data-spark="{{ m.symbol }}" role="img" aria-label="{{ m.symbol }} price, last 30 days"></canvas></span>
+            <span class="sparkline">
+              <canvas data-sparkline="{{ stock.symbol }}" role="img"
+                      aria-label="{{ stock.symbol }} price, last 30 days"></canvas>
+            </span>
             <span class="text-end">
-              <span class="d-block" data-price>{{ m.price | money }}</span>
-              <span class="d-block small">{{ change(m) }}</span>
+              <span class="d-block">{{ stock.price | money }}</span>
+              <span class="d-block small">{{ change(stock.change, stock.change_pct) }}</span>
             </span>
           </a>
         </li>
       {% endfor %}
     </ul>
   {% else %}
-    <p class="text-body-secondary small m-3" data-empty>{{ empty_text }}</p>
+    <p class="text-body-secondary small m-3">{{ empty_message }}</p>
   {% endif %}
-{%- endmacro %}
+{% endmacro %}
 
-{% macro panel(title, movers, empty_text, key) -%}
-  <section class="card mb-4" data-panel="{{ key }}">
-    <h2 class="card-header h6 mb-0">{{ title }}</h2>
-    {{ stock_list(movers, empty_text) }}
-  </section>
-{%- endmacro %}
 
-{% macro search_form(query, search_max, error=None) -%}
-  <form method="get" action="{{ url_for('stocks.search_page') }}" role="search" class="mb-5 stock-search mx-auto">
-    <label class="visually-hidden" for="q">Search stocks by symbol or company name</label>
-    <div class="input-group has-validation">
-      <input class="form-control{% if error %} is-invalid{% endif %}" type="search" id="q" name="q" value="{{ query }}"
-             placeholder="Search" maxlength="{{ search_max }}" autocomplete="off">
-      <button class="btn btn-primary" type="submit">Search</button>
-    </div>
-    {% if error %}<div class="invalid-feedback d-block" data-error="q">{{ error }}</div>{% endif %}
-  </form>
-{%- endmacro %}
-
-{% macro chart_data(chart) -%}
-  {# Data, not code: type="application/json" never runs, so the CSP can stay script-src 'self'. #}
-  <script type="application/json" id="chart-data">{{ chart | tojson }}</script>
-{%- endmacro %}

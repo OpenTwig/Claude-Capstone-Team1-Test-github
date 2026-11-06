@@ -1,99 +1,123 @@
-"""Application factory."""
-from __future__ import annotations
+"""Builds the Flask app. Running `flask --app app run` calls create_app() below.
 
+The settings (passwords and keys) come from a .env file, so they are never written in the code.
+Copy .env.example to .env and fill it in.
+"""
 import os
-from collections.abc import Mapping
 
-from dotenv import find_dotenv, load_dotenv
-from flask import Flask, jsonify
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template
+from flask_wtf.csrf import CSRFError, CSRFProtect
+from sqlalchemy import URL, text
 
-from app.cli import init_cli
-from app.config import ACCOUNT_TYPES, ConfigError, load_settings
-from app.crypto import FieldCipher
-from app.db import init_db
-from app.errors import register_error_handlers
-from app.logs import configure_logging
-from app.security import init_security, production_hardening_problems
+# The settings that must be in .env.
+REQUIRED_SETTINGS = [
+    "SECRET_KEY",
+    "DB_HOST",
+    "DB_NAME",
+    "DB_USER",
+    "DB_PASSWORD",
+    "FIELD_ENCRYPTION_KEY",
+]
 
+# The friendly error pages: status code -> (title, message). We never show Python errors to users.
+ERROR_PAGES = {
+    400: ("Request not accepted", "Your form expired or was submitted incorrectly. "
+                                  "Go back, refresh the page, and try again."),
+    403: ("Access denied", "You don't have permission to view this page."),
+    404: ("Page not found", "The page you asked for doesn't exist."),
+    405: ("Not allowed", "That action isn't allowed here."),
+    500: ("Something went wrong", "Something went wrong. Please try again."),
+}
 
-def create_app(env: Mapping[str, str] | None = None) -> Flask:
-    """Build the Flask app.
+def database_address():
+    """The address SQLAlchemy uses to reach MySQL: mysql+pymysql://user:password@host:port/database.
 
-    Settings come from ``env`` when given (tests pass it explicitly), otherwise
-    from the process environment plus a ``.env`` file found from the current
-    working directory. In production (APP_ENV=production already in the
-    environment, as systemd sets it) a ``.env`` file is never read: the settings
-    come only from /etc/trading/trading.env, so a stray .env can't change or
-    break them (docs/deployment.md). Raises ConfigError if settings are missing
-    or invalid.
+    URL.create() builds it safely even if the password contains characters like @ or /.
     """
-    if env is None:
-        if os.environ.get("APP_ENV") != "production":
-            dotenv_path = find_dotenv(usecwd=True)
-            if dotenv_path:
-                load_dotenv(dotenv_path)
-        env = os.environ
+    return URL.create(
+        "mysql+pymysql",
+        username=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        host=os.environ["DB_HOST"],
+        port=int(os.environ.get("DB_PORT", "3306")),
+        database=os.environ["DB_NAME"],
+        query={"charset": "utf8mb4"},
+    )
 
-    settings = load_settings(env)
+
+def create_app():
+    load_dotenv()  # read .env into the environment
+    missing = []
+    for setting in REQUIRED_SETTINGS:
+        if not os.environ.get(setting):
+            missing.append(setting)
+    if missing:
+        raise RuntimeError("Set these in .env (copy .env.example to start): " + ", ".join(missing))
 
     app = Flask(__name__)
-    app.config.update(
-        SECRET_KEY=settings.secret_key,
-        TESTING=settings.app_env == "test",
-        SETTINGS=settings,
-        ACCOUNT_TYPES=ACCOUNT_TYPES,
-    )
-    app.extensions["field_cipher"] = FieldCipher(settings.field_encryption_keys)
-    init_security(app, settings)
-    register_error_handlers(app)
-    init_db(app)
-    init_cli(app)
+    app.config["SECRET_KEY"] = os.environ["SECRET_KEY"]
+    app.config["FIELD_ENCRYPTION_KEY"] = os.environ["FIELD_ENCRYPTION_KEY"]
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_address()
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        # Store every time in UTC.
+        "connect_args": {"init_command": "SET time_zone = '+00:00'"},
+        # Lets two customers buy stocks at the same moment without blocking each other.
+        "isolation_level": "READ COMMITTED",
+        # Reconnect if MySQL closed a connection that sat unused for a long time.
+        "pool_pre_ping": True,
+    }
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
 
-    # Each blueprint is registered by the task that creates it (docs/tasks.md, Definition of done).
-    from app.account import init_account
-    from app.admin import init_admin
-    from app.auth import init_auth, public
-    from app.filters import init_filters
-    from app.history import init_history
-    from app.stocks import init_stocks
-    from app.trade import init_trade
-    from app.transfer import init_transfer
+    # Every form that uses POST must include {{ csrf_token() }}. This stops other websites
+    # from submitting forms to our site on a logged-in user's behalf.
+    CSRFProtect(app)
 
-    init_filters(app)
-    init_auth(app)
-    init_account(app)
-    init_admin(app)
-    init_transfer(app)
-    init_stocks(app)
-    init_trade(app)
-    init_history(app)
+    # These are imported here, inside the function, because they need the settings above.
+    from app import account, admin, auth, common, history, stocks, trade, transfer
+    from app.models import db
 
-    configure_logging(app)
-    if settings.is_production:
-        problems = production_hardening_problems(app)
-        if problems:
-            details = "\n".join(f"  - {p}" for p in problems)
-            raise ConfigError(f"The app can't start in production:\n{details}")
+    db.init_app(app)
+    auth.login_manager.init_app(app)
+    auth.bcrypt.init_app(app)
+
+    with app.app_context():
+        db.create_all()  # create any tables that don't exist yet (existing ones are left alone)
+        # The first administrator, from ADMIN_EMAIL and ADMIN_PASSWORD in .env (only if there is none yet).
+        admin.create_first_admin(os.environ.get("ADMIN_EMAIL"), os.environ.get("ADMIN_PASSWORD"))
+
+    # Each page file is a Blueprint: a group of pages. Register them all with the app.
+    app.register_blueprint(auth.bp)
+    app.register_blueprint(account.bp)
+    app.register_blueprint(stocks.bp)
+    app.register_blueprint(trade.bp)
+    app.register_blueprint(transfer.bp)
+    app.register_blueprint(history.bp)
+    app.register_blueprint(admin.bp)
+
+    # Lets templates write {{ amount | money }} and {{ quantity | shares }}.
+    app.add_template_filter(common.money, "money")
+    app.add_template_filter(common.shares, "shares")
+
+    # The friendly error pages.
+    def show_error_page(error):
+        status_code = getattr(error, "code", 500)
+        if isinstance(error, CSRFError):
+            status_code = 400
+        title, message = ERROR_PAGES[status_code]
+        html = render_template("errors/error.html", status=status_code, title=title, message=message)
+        return html, status_code
+
+    for status_code in ERROR_PAGES:
+        app.register_error_handler(status_code, show_error_page)
 
     @app.get("/health")
-    @public
     def health():
-        """For uptime monitoring (task 6.2): the app answers, and so does its database.
-
-        A monitor gets 200 when both work, and 503 when the database doesn't, without the error's details
-        (they go to the log only, N3.4)."""
-        import pymysql
-
-        from app.db import get_db
-
+        """For checking the site is up: {"status": "ok"} if the app and the database both answer."""
         try:
-            with get_db().cursor() as cur:
-                cur.execute("SELECT 1 AS up")
-                cur.fetchone()
-            get_db().commit()
-        except pymysql.MySQLError as exc:
-            app.logger.warning("health check: the database did not answer (MySQL error %s)",
-                               exc.args[0] if exc.args else "unknown")
+            db.session.execute(text("SELECT 1"))
+        except Exception:
             return jsonify(status="error", database="unavailable"), 503
         return jsonify(status="ok", database="ok")
 

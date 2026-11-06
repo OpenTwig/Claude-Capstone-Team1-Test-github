@@ -1,64 +1,97 @@
 <!doctype html>
+{# The layout every page shares: the navigation bar at the top, flash messages, then the page.
+   Each page starts with {% extends "base.html" %} and fills in the blocks below:
+     title     the text in the browser tab
+     content   the page itself
+     scripts   any JavaScript the page needs #}
 <html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Stock Trading System{% endblock %}</title>
-  {# Before the stylesheets, so a saved light/dark choice applies before anything is drawn (D13). #}
-  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+
+  {# site.js comes first, so a saved light/dark choice is applied before the page is drawn. #}
+  <script src="{{ url_for('static', filename='js/site.js') }}"></script>
+
+  {# Bootstrap from the CDN. "integrity" makes the browser check the file hasn't been changed. #}
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+        integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+        crossorigin="anonymous">
+  {# Our own styles come after Bootstrap's, so they can change them. #}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
+
 <body class="d-flex flex-column min-vh-100">
-  <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom app-navbar d-print-none">
+  <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom app-navbar">
     <div class="container-fluid">
       <a class="navbar-brand" href="/"><span class="app-logo">LOGO</span></a>
+
       {% if current_user.is_authenticated %}
-        {# Page order follows the wireframes (R2.1-R2.3). Administrators don't trade, so their
-           menu is Stocks, Administration, and History (D19). #}
+        {# The menu. Administrators don't trade, so they get a shorter one. #}
         {% if current_user.is_admin %}
-          {% set pages = [("Stocks", "/stocks"), ("Administration", "/admin"), ("History", "/history")] %}
+          {% set menu = [
+            ("Stocks", "/stocks"),
+            ("Administration", "/admin"),
+            ("History", "/history"),
+          ] %}
         {% else %}
-          {% set pages = [("Account", "/account"), ("Positions", "/positions"), ("Trade", "/trade"),
-                          ("Transfer Funds", "/transfer"), ("Stocks", "/stocks"), ("History", "/history")] %}
+          {% set menu = [
+            ("Account", "/account"),
+            ("Positions", "/positions"),
+            ("Trade", "/trade"),
+            ("Transfer Funds", "/transfer"),
+            ("Stocks", "/stocks"),
+            ("History", "/history"),
+          ] %}
         {% endif %}
-        {# Until a temporary password is replaced, only Log out works (R18.3), so hide the page links. #}
-        {% if current_user.must_change_password %}{% set pages = [] %}{% endif %}
-        {# Phones: the theme button sits in the top bar next to the menu button (D13). #}
-        {% with theme_button_class = "d-lg-none ms-auto me-3 px-2" %}{% include "_theme_button.html" %}{% endwith %}
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#main-nav"
-                aria-controls="main-nav" aria-expanded="false" aria-label="Toggle navigation">
+        {# Someone still on a temporary password can only choose a new one, so hide the menu. #}
+        {% if current_user.must_change_password %}
+          {% set menu = [] %}
+        {% endif %}
+
+        {# On small screens the menu folds into this button. #}
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#main-menu"
+                aria-controls="main-menu" aria-expanded="false" aria-label="Show the menu">
           <span class="navbar-toggler-icon"></span>
         </button>
-        <div class="collapse navbar-collapse" id="main-nav">
+
+        <div class="collapse navbar-collapse" id="main-menu">
           <ul class="navbar-nav me-auto">
-            {% for label, path in pages %}
-              {% set current = request.path == path or request.path.startswith(path ~ "/") %}
+            {% for label, address in menu %}
               <li class="nav-item">
-                <a class="nav-link{% if current %} active{% endif %}" href="{{ path }}"{% if current %} aria-current="page"{% endif %}>{{ label }}</a>
+                {% if request.path.startswith(address) %}
+                  <a class="nav-link active" aria-current="page" href="{{ address }}">{{ label }}</a>
+                {% else %}
+                  <a class="nav-link" href="{{ address }}">{{ label }}</a>
+                {% endif %}
               </li>
             {% endfor %}
           </ul>
+
           <ul class="navbar-nav align-items-lg-center">
-            {# Wider screens: just left of Profile (user feedback). Hidden in the phone menu. #}
-            <li class="nav-item d-none d-lg-block">
-              {% with theme_button_class = "" %}{% include "_theme_button.html" %}{% endwith %}
+            <li class="nav-item">
+              {% include "_theme_button.html" %}
             </li>
+
             <li class="nav-item dropdown">
-              <button class="nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Profile</button>
+              <button class="nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown"
+                      aria-expanded="false">Profile</button>
               <div class="dropdown-menu dropdown-menu-end profile-menu">
                 <div class="px-3 py-1">
-                  <div class="fw-semibold" data-profile="name">{{ current_user.name }}</div>
-                  <div class="text-body-secondary small" data-profile="email">{{ current_user.email }}</div>
+                  <div class="fw-semibold">{{ current_user.name }}</div>
+                  <div class="text-body-secondary small">{{ current_user.email }}</div>
                   {% if current_user.is_admin %}
-                    <div class="small mt-1" data-profile="access-level">Access level: {{ current_user.access_level }}</div>
-                    <div class="small" data-profile="department">Department: {{ current_user.department or "—" }}</div>
+                    <div class="small mt-1">Access level: {{ current_user.access_level }}</div>
+                    <div class="small">Department: {{ current_user.department or "—" }}</div>
                   {% endif %}
                 </div>
               </div>
             </li>
+
             <li class="nav-item">
-              <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">
+              {# Logging out changes something, so it is a POST form, not a link. #}
+              <form method="post" action="{{ url_for('auth.logout') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="nav-link">Log out</button>
               </form>
@@ -66,28 +99,31 @@
           </ul>
         </div>
       {% else %}
+        {# Not logged in: just the site name and the light/dark button. #}
         <span class="navbar-text me-auto ms-2 fs-5">Stock Trading System</span>
-        {% with theme_button_class = "" %}{% include "_theme_button.html" %}{% endwith %}
+        {% include "_theme_button.html" %}
       {% endif %}
     </div>
   </nav>
 
   <main class="container py-4 flex-grow-1 d-flex flex-column">
-    {% if prices_stale %}
-      <div class="alert alert-warning py-2" role="status" data-prices-stale>Prices may be delayed</div>
-    {% endif %}
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-          {{ message }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-      {% endfor %}
-    {% endwith %}
+    {# Messages from flash() in the Python code. Bootstrap calls the red style "danger". #}
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      {% if category == "error" %}
+        {% set category = "danger" %}
+      {% endif %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+
     {% block content %}{% endblock %}
   </main>
 
-  <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+          crossorigin="anonymous"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

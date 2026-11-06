@@ -1,0 +1,40 @@
+{# Pieces that several pages share (like common.py, but for templates). A macro is like a Python
+   function that returns HTML. A page uses one with, for example:
+     {% from "_macros.html" import change %}
+     {{ change(position.gain_loss) }} #}
+
+
+{# A change in money, like "+$12.50 (+1.25%)", green when up and red when down.
+   The + or - sign shows the direction too, so the colour isn't the only clue. #}
+{% macro change(amount, percent=none) %}
+  {% if amount > 0 %}
+    <span class="text-success">+{{ amount | money }}{% if percent is not none %} (+{{ percent }}%){% endif %}</span>
+  {% elif amount < 0 %}
+    <span class="text-danger">{{ amount | money }}{% if percent is not none %} ({{ percent }}%){% endif %}</span>
+  {% else %}
+    <span>{{ amount | money }}{% if percent is not none %} ({{ percent }}%){% endif %}</span>
+  {% endif %}
+{% endmacro %}
+
+
+{# The error message under a form box, if there is one. For example: {{ field_error(errors.amount) }} #}
+{% macro field_error(message) %}
+  {% if message %}
+    <div class="invalid-feedback d-block">{{ message }}</div>
+  {% endif %}
+{% endmacro %}
+
+
+{# The numbers for a page's charts, put in the page as JSON for charts.js to read. #}
+{% macro chart_numbers(chart) %}
+  <script type="application/json" id="chart-data">{{ chart | tojson }}</script>
+{% endmacro %}
+
+
+{# The two scripts that draw charts: Chart.js from the CDN, then our charts.js. #}
+{% macro chart_scripts() %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+          integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ"
+          crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+{% endmacro %}

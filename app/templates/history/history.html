@@ -1,144 +1,63 @@
 {% extends "base.html" %}
-{% from "account/_macros.html" import signed %}
+{% from "_macros.html" import change %}
 {% from "_pager.html" import pager %}
 {% block title %}History · Stock Trading System{% endblock %}
 
+{# The address of page `number` of the list. Used by the page links at the bottom. #}
+{% macro link_to_page(number) %}
+  {{- url_for('history.history_page', page=number) -}}
+{% endmacro %}
+
 {% block content %}
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Transaction History</h1>
-    {% if options %}
-      {# R13.5: Print first asks how far back to print (user feedback), then shows that whole range on one page. #}
-      <button type="button" class="btn btn-outline-secondary d-print-none" data-bs-toggle="collapse" data-bs-target="#print-options"
-              aria-expanded="false" aria-controls="print-options" data-print-toggle>
-        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="print-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-          <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
-          <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1"/>
-        </svg>
-        Print
-      </button>
-    {% endif %}
-  </div>
+  <h1 class="h3 mb-3">Transaction History</h1>
 
-  {% if options %}
-    {# How far back to print (user feedback). Keeps the portfolio and symbol; ?print=1 lists every row in the range. #}
-    <form method="get" action="{{ url_for('history.history_page') }}" class="collapse card mb-4 d-print-none" id="print-options" data-print-options>
-      <div class="card-body row g-3 align-items-end">
-        <input type="hidden" name="portfolio" value="{{ selected }}">
-        {% if symbol %}<input type="hidden" name="symbol" value="{{ symbol }}">{% endif %}
-        <input type="hidden" name="print" value="1">
-        <div class="col-sm-6 col-md-4">
-          <label class="form-label" for="print-range">How far back do you want to print?</label>
-          <select class="form-select" id="print-range" name="range">
-            {% for key, label in ranges.items() %}
-              <option value="{{ key }}"{% if key == range_key %} selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-sm-6 col-md-3 d-grid">
-          <button type="submit" class="btn btn-primary">Print</button>
-        </div>
-        <p class="col-12 small text-body-secondary mb-0">Every transaction in that range is printed, not just the page on screen.</p>
-      </div>
-    </form>
-  {% endif %}
-
-  {% if not options %}
-    <div class="alert alert-info" role="alert" data-no-portfolio>
-      {% if current_user.is_admin %}No customer has a portfolio yet.
-      {% else %}You don't have a portfolio yet. <a href="{{ url_for('account.summary') }}" class="alert-link">Create one on your Account page</a>.{% endif %}
-    </div>
+  {% if not lines %}
+    <p class="text-body-secondary">No transactions yet.</p>
   {% else %}
-    {% if selected == all_choice %}{% set chosen_label = "All customers" %}
-    {% else %}{% set chosen_label = (options | selectattr("portfolio_id", "equalto", selected) | first).label %}{% endif %}
-    {# Filters (R13.1). Printing leaves them out (R13.5). #}
-    <form method="get" action="{{ url_for('history.history_page') }}" class="card mb-4 d-print-none" data-history-filters novalidate>
-      <div class="card-body row g-3 align-items-end">
-        <div class="col-md-4">
-          <label class="form-label" for="portfolio">Portfolio</label>
-          <select class="form-select" id="portfolio" name="portfolio">
-            {% if is_admin %}<option value="{{ all_choice }}"{% if selected == all_choice %} selected{% endif %}>All customers</option>{% endif %}
-            {% for o in options %}
-              <option value="{{ o.portfolio_id }}"{% if o.portfolio_id == selected %} selected{% endif %}>{{ o.label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-sm-6 col-md-3">
-          <label class="form-label" for="range">Date Range</label>
-          <select class="form-select" id="range" name="range">
-            {% for key, label in ranges.items() %}
-              <option value="{{ key }}"{% if key == range_key %} selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-sm-6 col-md-3">
-          <label class="form-label" for="symbol">Symbol <span class="text-body-secondary">(optional)</span></label>
-          <input class="form-control text-uppercase{% if errors.get('symbol') %} is-invalid{% endif %}" id="symbol" name="symbol"
-                 value="{{ symbol }}" maxlength="10" autocomplete="off">
-          {% if errors.get("symbol") %}<div class="invalid-feedback d-block" data-error="symbol">{{ errors["symbol"] }}</div>{% endif %}
-        </div>
-        <div class="col-md-2 d-grid">
-          <button type="submit" class="btn btn-primary">Search</button>
-        </div>
-      </div>
-    </form>
+    <div class="table-responsive">
+      <table class="table align-middle history-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            {# Administrators see everyone's transactions, so they also see whose each one is. #}
+            {% if is_admin %}
+              <th>Customer</th>
+            {% endif %}
+            <th>Account</th>
+            <th>Transaction Type</th>
+            <th>Symbol</th>
+            <th>Description</th>
+            <th class="text-end">Quantity</th>
+            <th class="text-end">Price</th>
+            <th class="text-end">Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            <tr>
+              <td class="text-nowrap">
+                {{ line.at.strftime("%m/%d/%Y") }}
+                <span class="d-block small text-body-secondary">{{ line.at.strftime("%I:%M %p").lstrip("0") }}</span>
+              </td>
+              {% if is_admin %}
+                <td>{{ line.customer }}</td>
+              {% endif %}
+              <td class="text-nowrap">{{ line.account }}</td>
+              <td>{{ line.type }}</td>
+              <td>{{ line.symbol or "" }}</td>
+              <td>{{ line.description }}</td>
+              {# Transfers have no quantity or price, so those cells stay empty. #}
+              <td class="text-end">{% if line.quantity is not none %}{{ line.quantity | shares }}{% endif %}</td>
+              <td class="text-end">{% if line.price is not none %}{{ line.price | money }}{% endif %}</td>
+              <td class="text-end text-nowrap">{{ change(line.amount) }}</td>
+              <td>{{ line.status }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
-    {# Printing renames the page (history.js), so a saved PDF is named after the account and dates. #}
-    {% set print_title = "Transaction History - " ~ (chosen_label | replace("•••• ", "") | replace(": ", " - "))
-                         ~ " - " ~ start.strftime("%m-%d-%Y") ~ " to " ~ end.strftime("%m-%d-%Y") %}
-    {% macro page_href(n) -%}
-      {{- url_for('history.history_page', portfolio=selected, range=range_key, symbol=symbol or none, page=n, _anchor='transactions') -}}
-    {%- endmacro %}
-    <section id="transactions" data-transactions data-print-title="{{ print_title }}"{% if print_view %} data-autoprint{% endif %}>
-      <h2 class="h5">Transactions</h2>
-      {# The printed page names the account and range, since the filters aren't printed. #}
-      <p class="d-none d-print-block mb-1">{{ chosen_label }}</p>
-      {% if rows %}
-        <p data-found>Transactions found from {{ start.strftime("%m/%d/%Y") }} to {{ end.strftime("%m/%d/%Y") }}</p>
-        {% if print_view %}
-          <p class="small text-body-secondary d-print-none" data-print-view>All {{ rows | length }} transactions in this range, on one page for printing.
-            <a href="{{ url_for('history.history_page', portfolio=selected, range=range_key, symbol=symbol or none) }}">Back to pages</a></p>
-        {% endif %}
-        <div class="table-responsive">
-          <table class="table align-middle history-table">
-            <thead>
-              <tr>
-                <th scope="col">Date</th>
-                {# Whose row it is: administrators only (user feedback); a customer only ever sees their own. #}
-                {% if is_admin %}<th scope="col">Customer</th><th scope="col">Account</th>{% endif %}
-                <th scope="col">Transaction Type</th>
-                <th scope="col">Symbol</th>
-                <th scope="col">Description</th>
-                <th scope="col" class="text-end">Quantity</th>
-                <th scope="col" class="text-end">Price</th>
-                <th scope="col" class="text-end">Amount</th>
-                <th scope="col">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for r in rows %}
-                <tr data-history-row>
-                  <td class="text-nowrap">{{ r.at.strftime("%m/%d/%Y") }}<span class="d-block small text-body-secondary">{{ r.at.strftime("%I:%M %p").lstrip("0") }}</span></td>
-                  {% if is_admin %}<td data-customer>{{ r.customer }}</td><td class="text-nowrap" data-account>{{ r.account }}</td>{% endif %}
-                  <td>{{ r.type }}</td>
-                  <td>{{ r.symbol or "" }}</td>
-                  <td>{{ r.description }}</td>
-                  <td class="text-end">{% if r.quantity is not none %}{{ r.quantity | shares }}{% endif %}</td>
-                  <td class="text-end">{% if r.price is not none %}{{ r.price | money }}{% endif %}</td>
-                  <td class="text-end text-nowrap">{{ signed(r.amount) }}</td>
-                  <td>{{ r.status }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% if listing %}{{ pager(listing, numbers, "Transactions", "history", page_href) }}{% endif %}
-      {% elif rows is not none %}
-        <p class="text-body-secondary" data-none-found>No transactions found</p>
-      {% endif %}
-    </section>
+    {{ pager(page, link_to_page) }}
   {% endif %}
-{% endblock %}
-
-{% block scripts %}
-  <script src="{{ url_for('static', filename='js/history.js') }}"></script>
 {% endblock %}

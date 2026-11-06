@@ -1,76 +1,83 @@
 {% extends "base.html" %}
+{% from "_macros.html" import field_error %}
 {% block title %}Transfer Funds · Stock Trading System{% endblock %}
 
-{% macro field_error(errors, name) -%}
-  {% if errors.get(name) %}<div class="invalid-feedback d-block" data-error="{{ name }}">{{ errors[name] }}</div>{% endif %}
-{%- endmacro %}
-
-{% macro invalid(errors, name) -%}{% if errors.get(name) %} is-invalid{% endif %}{%- endmacro %}
+{# One of the From / To menus. Each choice's value says what it is: "bank:3" or "portfolio:7". #}
+{% macro account_menu(field, label) %}
+  <label class="form-label" for="{{ field }}">{{ label }}</label>
+  <select class="form-select {% if errors[field] %}is-invalid{% endif %}" id="{{ field }}" name="{{ field }}">
+    <option value="">Choose…</option>
+    {% if banks %}
+      <optgroup label="Bank accounts">
+        {% for bank in banks %}
+          {% set choice = "bank:" ~ bank.bank_account_id %}
+          <option value="{{ choice }}" {% if values[field] == choice %}selected{% endif %}>
+            {{ bank_labels[bank.bank_account_id] }} · {{ bank.bank_name }}
+          </option>
+        {% endfor %}
+      </optgroup>
+    {% endif %}
+    {% if portfolios %}
+      <optgroup label="Portfolios">
+        {% for portfolio in portfolios %}
+          {% set choice = "portfolio:" ~ portfolio.portfolio_id %}
+          <option value="{{ choice }}" {% if values[field] == choice %}selected{% endif %}>
+            {{ portfolio_labels[portfolio.portfolio_id] }} · {{ portfolio.cash_balance | money }}
+          </option>
+        {% endfor %}
+      </optgroup>
+    {% endif %}
+  </select>
+  {{ field_error(errors[field]) }}
+{% endmacro %}
 
 {% block content %}
   <h1 class="h3 mb-3">Transfer Funds</h1>
 
-  {# Deposits and withdrawals need a bank account and a portfolio; moves need two portfolios (R11.6, R19). #}
+  {# A deposit or withdrawal needs a bank account and a portfolio. A move needs two portfolios. #}
   {% set can_move = portfolios | length >= 2 %}
   {% set can_transfer = (banks and portfolios) or can_move %}
+
   {% if not banks %}
-    <div class="alert alert-warning" role="alert" data-no-bank>Link a bank account before transferring funds
-      {%- if can_move %}<span class="d-block small mt-1" data-can-move>You can still move cash between your brokerage accounts.</span>{% endif %}</div>
+    <div class="alert alert-warning" role="alert">
+      Link a bank account before transferring funds.
+      {% if can_move %}
+        <span class="d-block small mt-1">You can still move cash between your brokerage accounts.</span>
+      {% endif %}
+    </div>
   {% elif not portfolios %}
-    <div class="alert alert-info" role="alert" data-no-portfolio>You don't have a portfolio yet. Open one from your Account page first.</div>
-  {% endif %}
-  {% if errors.get("form") %}
-    <div class="alert alert-danger" role="alert" data-error="form">{{ errors["form"] }}</div>
+    <div class="alert alert-info" role="alert">
+      You don't have a portfolio yet. Open one from your Account page first.
+    </div>
   {% endif %}
 
-  {# Transfer form (R11, R12, R19). From/To list the customer's bank accounts and portfolios. #}
-  <form method="post" action="{{ url_for('transfer.submit_transfer') }}" class="card mb-4" novalidate>
+  {% if errors.form %}
+    <div class="alert alert-danger" role="alert">{{ errors.form }}</div>
+  {% endif %}
+
+  {# ---- The transfer form ---- #}
+  <form method="post" action="{{ url_for('transfer.submit_transfer') }}" class="card mb-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <fieldset class="card-body"{% if not can_transfer %} disabled{% endif %}>
+    {# "disabled" greys out the whole form when no transfer is possible yet. #}
+    <fieldset class="card-body" {% if not can_transfer %}disabled{% endif %}>
       <div class="row g-3">
-        {% for name, label in (("from_account", "From"), ("to_account", "To")) %}
-          <div class="col-md-6 col-lg-3">
-            <label class="form-label" for="{{ name }}">{{ label }}</label>
-            <select class="form-select{{ invalid(errors, name) }}" id="{{ name }}" name="{{ name }}" data-account-select>
-              <option value="">Choose…</option>
-              {% if banks %}
-                <optgroup label="Bank accounts">
-                  {% for b in banks %}
-                    {% set token = "bank:" ~ b.bank_account_id %}
-                    {% set label = bank_labels[b.bank_account_id] %}
-                    <option value="{{ token }}"{% if values.get(name) == token %} selected{% endif %}
-                            data-name="{{ label }}" data-detail="{{ b.bank_name }}">{{ label }} · {{ b.bank_name }}</option>
-                  {% endfor %}
-                </optgroup>
-              {% endif %}
-              {% if portfolios %}
-                <optgroup label="Portfolios">
-                  {% for p in portfolios %}
-                    {% set token = "portfolio:" ~ p.portfolio_id %}
-                    {% set label = portfolio_labels[p.portfolio_id] %}
-                    <option value="{{ token }}"{% if values.get(name) == token %} selected{% endif %}
-                            data-name="{{ label }}" data-detail="{{ p.cash_balance | money }}">{{ label }} · {{ p.cash_balance | money }}</option>
-                  {% endfor %}
-                </optgroup>
-              {% endif %}
-            </select>
-            {{ field_error(errors, name) }}
-          </div>
-        {% endfor %}
         <div class="col-md-6 col-lg-3">
-          <label class="form-label" for="amount">Cash Amount</label>
-          <div class="input-group has-validation">
-            <span class="input-group-text">$</span>
-            <input class="form-control{{ invalid(errors, 'amount') }}" id="amount" name="amount" inputmode="decimal"
-                   autocomplete="off" placeholder="Insert Amount" value="{{ values.get('amount', '') }}">
-          </div>
-          {{ field_error(errors, "amount") }}
+          {{ account_menu("from_account", "From") }}
         </div>
         <div class="col-md-6 col-lg-3">
+          {{ account_menu("to_account", "To") }}
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <label class="form-label" for="amount">Cash Amount ($)</label>
+          <input class="form-control {% if errors.amount %}is-invalid{% endif %}" id="amount" name="amount"
+                 inputmode="decimal" autocomplete="off" placeholder="Insert Amount" value="{{ values.amount or '' }}">
+          {{ field_error(errors.amount) }}
+        </div>
+        <div class="col-md-6 col-lg-3">
+          {# Transfers always happen today, so the date is shown but can't be changed. #}
           <label class="form-label" for="transfer_date">Transfer Date</label>
-          <input class="form-control{{ invalid(errors, 'transfer_date') }}" type="date" id="transfer_date" name="transfer_date"
-                 value="{{ values.get('transfer_date') or today.isoformat() }}" min="{{ today.isoformat() }}" max="{{ today.isoformat() }}">
-          {{ field_error(errors, "transfer_date") }}
+          <input class="form-control" type="date" id="transfer_date" name="transfer_date"
+                 value="{{ today.isoformat() }}" min="{{ today.isoformat() }}" max="{{ today.isoformat() }}">
         </div>
       </div>
       <div class="d-flex justify-content-end gap-2 mt-3">
@@ -81,71 +88,82 @@
   </form>
 
   <div class="row g-4">
-    {# Add Bank Account (R10), collapsible; open when there are none yet or the form had errors.
-       It also lists the linked accounts, each with a Remove button (R10.6, D25). #}
-    {% set open_bank_form = not banks or bank_errors %}
+    {# ---- Bank accounts: the list, and the Add Bank Account form ---- #}
     <div class="col-lg-8">
       <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h2 class="h5 mb-0">Add Bank Account</h2>
-          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#add-bank"
-                  aria-expanded="{{ 'true' if open_bank_form else 'false' }}" aria-controls="add-bank">Show / hide</button>
+        <div class="card-header">
+          <h2 class="h5 mb-0">Bank Accounts</h2>
         </div>
-        <div class="collapse{% if open_bank_form %} show{% endif %}" id="add-bank">
-          <div class="card-body">
+        <div class="card-body">
           {% if banks %}
-            <h3 class="h6">Your bank accounts</h3>
-            <ul class="list-group mb-4" data-bank-list>
-              {% for b in banks %}
+            <ul class="list-group mb-4">
+              {% for bank in banks %}
                 <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
-                  <span><span class="fw-semibold">{{ b.nickname }}</span>
-                    <span class="text-body-secondary">{{ b.bank_name }} {{ b.masked_account_number }}</span></span>
-                  <form method="post" action="{{ url_for('transfer.remove_bank_account', bank_account_id=b.bank_account_id) }}"
-                        data-confirm="Remove {{ b.nickname }} ({{ b.bank_name }} {{ b.masked_account_number }})? Past transfers will still show it.">
+                  <span>
+                    <span class="fw-semibold">{{ bank.nickname }}</span>
+                    <span class="text-body-secondary">{{ bank.bank_name }} {{ bank.masked_account_number }}</span>
+                  </span>
+                  {# data-confirm makes site.js ask "Are you sure?" first. #}
+                  <form method="post"
+                        action="{{ url_for('transfer.remove_bank_account', bank_account_id=bank.bank_account_id) }}"
+                        data-confirm="Remove {{ bank.nickname }}? Past transfers will still show it.">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
                   </form>
                 </li>
               {% endfor %}
             </ul>
-            <h3 class="h6">Link another bank account</h3>
           {% endif %}
-          <form method="post" action="{{ url_for('transfer.add_bank_account') }}" novalidate>
+
+          <h3 class="h6">Add a bank account</h3>
+          <form method="post" action="{{ url_for('transfer.add_bank_account') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="row g-3">
-              {% for name, label, extra in (("bank_name", "Bank Name", ""), ("account_number", "Account Number", 'inputmode="numeric" autocomplete="off"'),
-                                           ("routing_number", "Routing Number", 'inputmode="numeric" autocomplete="off"'), ("nickname", "Nickname", "")) %}
-                <div class="col-md-6">
-                  <label class="form-label" for="bank-{{ name }}">{{ label }}</label>
-                  <input class="form-control{{ invalid(bank_errors, name) }}" id="bank-{{ name }}" name="{{ name }}"
-                         placeholder="{{ label }}" value="{{ bank_values.get(name, '') }}" {{ extra | safe }}>
-                  {{ field_error(bank_errors, name) }}
-                </div>
-              {% endfor %}
+              <div class="col-md-6">
+                <label class="form-label" for="bank_name">Bank Name</label>
+                <input class="form-control {% if bank_errors.bank_name %}is-invalid{% endif %}" id="bank_name"
+                       name="bank_name" value="{{ bank_values.bank_name or '' }}">
+                {{ field_error(bank_errors.bank_name) }}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="account_number">Account Number</label>
+                {# Never filled back in after an error: account numbers aren't put back into the page. #}
+                <input class="form-control {% if bank_errors.account_number %}is-invalid{% endif %}"
+                       id="account_number" name="account_number" inputmode="numeric" autocomplete="off">
+                {{ field_error(bank_errors.account_number) }}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="routing_number">Routing Number</label>
+                <input class="form-control {% if bank_errors.routing_number %}is-invalid{% endif %}"
+                       id="routing_number" name="routing_number" inputmode="numeric" autocomplete="off"
+                       value="{{ bank_values.routing_number or '' }}">
+                {{ field_error(bank_errors.routing_number) }}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="nickname">Nickname</label>
+                <input class="form-control {% if bank_errors.nickname %}is-invalid{% endif %}" id="nickname"
+                       name="nickname" value="{{ bank_values.nickname or '' }}">
+                {{ field_error(bank_errors.nickname) }}
+              </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-3">
               <button type="reset" class="btn btn-outline-secondary">Clear</button>
               <button type="submit" class="btn btn-primary">Submit</button>
             </div>
           </form>
-          </div>
         </div>
       </div>
     </div>
 
-    {# Support panel: contact details from configuration (D24, A20). #}
+    {# ---- Support ---- #}
     <div class="col-lg-4">
       <div class="card h-100">
         <div class="card-header"><h2 class="h5 mb-0">Support</h2></div>
-        <div class="card-body" data-support>
+        <div class="card-body">
           <p class="mb-0">Questions about a transfer? Contact support at
             <a href="mailto:{{ support_email }}">{{ support_email }}</a>, {{ support_hours }}.</p>
         </div>
       </div>
     </div>
   </div>
-{% endblock %}
-
-{% block scripts %}
-  <script src="{{ url_for('static', filename='js/transfer.js') }}"></script>
 {% endblock %}
