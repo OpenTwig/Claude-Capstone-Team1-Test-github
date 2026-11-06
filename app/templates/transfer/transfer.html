@@ -1,17 +1,15 @@
 {% extends "base.html" %}
-{% from "_macros.html" import field_error %}
 {% block title %}Transfer Funds · Stock Trading System{% endblock %}
 
 {# One of the From / To menus. Each choice's value says what it is: "bank:3" or "portfolio:7". #}
 {% macro account_menu(field, label) %}
   <label class="form-label" for="{{ field }}">{{ label }}</label>
-  <select class="form-select {% if errors[field] %}is-invalid{% endif %}" id="{{ field }}" name="{{ field }}">
+  <select class="form-select" id="{{ field }}" name="{{ field }}">
     <option value="">Choose…</option>
     {% if banks %}
       <optgroup label="Bank accounts">
         {% for bank in banks %}
-          {% set choice = "bank:" ~ bank.bank_account_id %}
-          <option value="{{ choice }}" {% if values[field] == choice %}selected{% endif %}>
+          <option value="bank:{{ bank.bank_account_id }}">
             {{ bank_labels[bank.bank_account_id] }} · {{ bank.bank_name }}
           </option>
         {% endfor %}
@@ -20,15 +18,13 @@
     {% if portfolios %}
       <optgroup label="Portfolios">
         {% for portfolio in portfolios %}
-          {% set choice = "portfolio:" ~ portfolio.portfolio_id %}
-          <option value="{{ choice }}" {% if values[field] == choice %}selected{% endif %}>
+          <option value="portfolio:{{ portfolio.portfolio_id }}">
             {{ portfolio_labels[portfolio.portfolio_id] }} · {{ portfolio.cash_balance | money }}
           </option>
         {% endfor %}
       </optgroup>
     {% endif %}
   </select>
-  {{ field_error(errors[field]) }}
 {% endmacro %}
 
 {% block content %}
@@ -51,10 +47,6 @@
     </div>
   {% endif %}
 
-  {% if errors.form %}
-    <div class="alert alert-danger" role="alert">{{ errors.form }}</div>
-  {% endif %}
-
   {# ---- The transfer form ---- #}
   <form method="post" action="{{ url_for('transfer.submit_transfer') }}" class="card mb-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -69,9 +61,8 @@
         </div>
         <div class="col-md-6 col-lg-3">
           <label class="form-label" for="amount">Cash Amount ($)</label>
-          <input class="form-control {% if errors.amount %}is-invalid{% endif %}" id="amount" name="amount"
-                 inputmode="decimal" autocomplete="off" placeholder="Insert Amount" value="{{ values.amount or '' }}">
-          {{ field_error(errors.amount) }}
+          <input class="form-control" id="amount" name="amount"
+                 inputmode="decimal" autocomplete="off" placeholder="Insert Amount">
         </div>
         <div class="col-md-6 col-lg-3">
           {# Transfers always happen today, so the date is shown but can't be changed. #}
@@ -121,29 +112,23 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label" for="bank_name">Bank Name</label>
-                <input class="form-control {% if bank_errors.bank_name %}is-invalid{% endif %}" id="bank_name"
-                       name="bank_name" value="{{ bank_values.bank_name or '' }}">
-                {{ field_error(bank_errors.bank_name) }}
+                <input class="form-control" id="bank_name"
+                       name="bank_name">
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="account_number">Account Number</label>
-                {# Never filled back in after an error: account numbers aren't put back into the page. #}
-                <input class="form-control {% if bank_errors.account_number %}is-invalid{% endif %}"
+                <input class="form-control"
                        id="account_number" name="account_number" inputmode="numeric" autocomplete="off">
-                {{ field_error(bank_errors.account_number) }}
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="routing_number">Routing Number</label>
-                <input class="form-control {% if bank_errors.routing_number %}is-invalid{% endif %}"
-                       id="routing_number" name="routing_number" inputmode="numeric" autocomplete="off"
-                       value="{{ bank_values.routing_number or '' }}">
-                {{ field_error(bank_errors.routing_number) }}
+                <input class="form-control"
+                       id="routing_number" name="routing_number" inputmode="numeric" autocomplete="off">
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="nickname">Nickname</label>
-                <input class="form-control {% if bank_errors.nickname %}is-invalid{% endif %}" id="nickname"
-                       name="nickname" value="{{ bank_values.nickname or '' }}">
-                {{ field_error(bank_errors.nickname) }}
+                <input class="form-control" id="nickname"
+                       name="nickname">
               </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-3">

@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_macros.html" import field_error %}
 {% block title %}Trade · Stock Trading System{% endblock %}
 
 {% block content %}
@@ -28,11 +27,6 @@
       <span>Available Cash: <span class="fw-semibold">{{ portfolio.cash_balance | money }}</span></span>
     </form>
 
-    {# Problems with the whole order, like "Insufficient funds" or "Market is closed". #}
-    {% if errors.form %}
-      <div class="alert alert-danger" role="alert">{{ errors.form }}</div>
-    {% endif %}
-
     <div class="card mb-4">
       <div class="card-body">
         <div class="row g-4">
@@ -43,12 +37,11 @@
               <input type="hidden" name="portfolio" value="{{ portfolio.portfolio_id }}">
               <label class="form-label" for="symbol">Symbol</label>
               <div class="input-group symbol-input">
-                <input class="form-control text-uppercase {% if errors.symbol %}is-invalid{% endif %}"
+                <input class="form-control text-uppercase"
                        id="symbol" name="symbol" value="{{ symbol }}" placeholder="Enter Symbol"
                        maxlength="10" autocomplete="off" required>
                 <button class="btn btn-outline-secondary" type="submit">Look up</button>
               </div>
-              {{ field_error(errors.symbol) }}
             </form>
 
             {# The last few symbols looked up, as links. #}
@@ -67,14 +60,14 @@
           {% if quote %}
             <div class="col-lg-5">
               <div class="d-flex justify-content-between align-items-start gap-2">
-                <h2 class="h5 mb-1">{{ quote.company_name }} ({{ quote.symbol }})</h2>
+                <h2 class="h5 mb-1">{{ quote.stock.company_name }} ({{ quote.stock.symbol }})</h2>
                 {% if quote.market.is_open %}
                   <span class="badge text-bg-success">{{ market_text }}</span>
                 {% else %}
                   <span class="badge text-bg-secondary">{{ market_text }}</span>
                 {% endif %}
               </div>
-              <p class="fs-4 fw-semibold mb-2">{{ quote.price | money }}</p>
+              <p class="fs-4 fw-semibold mb-2">{{ quote.stock.current_price | money }}</p>
               <table class="table table-sm mb-0 quote-facts">
                 <tr>
                   <th class="fw-normal text-body-secondary">Change since close</th>
@@ -103,37 +96,33 @@
 
               <div class="col-sm-6 col-lg-3">
                 <label class="form-label" for="action">Action</label>
-                <select class="form-select {% if errors.action %}is-invalid{% endif %}" id="action" name="action">
+                <select class="form-select" id="action" name="action">
                   <option value="">Select Action</option>
-                  <option {% if values.action == "Buy" %}selected{% endif %}>Buy</option>
+                  <option>Buy</option>
                   {# Sell is greyed out when the portfolio owns none of this stock. #}
                   {% if can_sell %}
-                    <option {% if values.action == "Sell" %}selected{% endif %}>Sell</option>
+                    <option>Sell</option>
                   {% else %}
                     <option disabled>Sell</option>
                   {% endif %}
                 </select>
-                {{ field_error(errors.action) }}
               </div>
 
               <div class="col-sm-6 col-lg-3">
                 <label class="form-label" for="unit">Unit</label>
                 <select class="form-select" id="unit" name="unit">
                   {% for unit in units %}
-                    <option {% if values.unit == unit %}selected{% endif %}>{{ unit }}</option>
+                    <option>{{ unit }}</option>
                   {% endfor %}
                 </select>
-                {{ field_error(errors.unit) }}
               </div>
 
               <div class="col-sm-6 col-lg-3">
                 <label class="form-label" for="amount">
                   Amount <span class="text-body-secondary">($ or shares, per Unit)</span>
                 </label>
-                <input class="form-control {% if errors.amount %}is-invalid{% endif %}" id="amount" name="amount"
-                       inputmode="decimal" autocomplete="off" placeholder="Insert Amount"
-                       value="{{ values.amount or '' }}">
-                {{ field_error(errors.amount) }}
+                <input class="form-control" id="amount" name="amount"
+                       inputmode="decimal" autocomplete="off" placeholder="Insert Amount">
               </div>
 
               <div class="col-sm-6 col-lg-3">

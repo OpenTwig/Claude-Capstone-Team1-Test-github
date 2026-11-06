@@ -9,18 +9,17 @@ Placing an order takes two steps:
 """
 from decimal import ROUND_DOWN, Decimal
 
-from flask import Blueprint, abort, render_template, request, session
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user
 
 from app import market
 from app.auth import customer_required
 from app.common import (ARIZONA, UserError, get_portfolio, list_portfolios, money, now_for_database,
-                        now_utc, parse_money, parse_shares, percent, to_cents, today)
+                        now_utc, parse_money, parse_shares, to_cents)
 from app.models import History, Inventory, Issuer, Portfolio, Transaction, db
 
 bp = Blueprint("trade", __name__)
 
-ACTIONS = ["Buy", "Sell"]
 UNITS = ["Dollars", "Shares"]  # buy $500 worth, or buy 10 shares
 ORDER_TYPES = ["Market"]
 TIMINGS = ["Day Only"]
@@ -53,8 +52,8 @@ def choose_portfolio(user_id, portfolios, portfolio_id_text):
 # --- Looking up a stock ------------------------------------------------------------------------------
 
 def get_quote(user_id, typed_symbol, portfolio_id):
-    """The stock's price, its change since yesterday, whether the market is open, and how many
-    shares the portfolio owns. Raises UserError("Symbol not found") if there is no such stock."""
+    """The stock (with its price and change since yesterday), whether the market is open, and how
+    many shares the portfolio owns. Raises UserError("Symbol not found") if there is no such stock."""
     get_portfolio(user_id, portfolio_id)  # 404 if the portfolio isn't theirs
     symbol = (typed_symbol or "").strip().upper()
     stock = Issuer.query.filter_by(symbol=symbol).first()
@@ -69,25 +68,15 @@ def get_quote(user_id, typed_symbol, portfolio_id):
     if stock is None or (not stock.is_listed and shares_owned == 0):
         raise UserError("Symbol not found", "symbol")
 
-    previous_close = stock.previous_close(today())
-    change = stock.current_price - previous_close
-    return {
-        "symbol": stock.symbol,
-        "company_name": stock.company_name,
-        "price": stock.current_price,
-        "change": change,
-        "change_pct": percent(change, previous_close),
-        "market": market.get_status(),
-        "shares_owned": shares_owned,
-    }
+    return {"stock": stock, "market": market.get_status(), "shares_owned": shares_owned}
 
 
-def change_text(quote):
+def change_text(stock):
     """Like "+$1.25 (+2.10%)"."""
     sign = ""
-    if quote["change"] > 0:
+    if stock.change > 0:
         sign = "+"
-    return f"{sign}{money(quote['change'])} ({sign}{quote['change_pct']}%)"
+    return f"{sign}{money(stock.change)} ({sign}{stock.change_pct}%)"
 
 
 def remember_symbol(symbol):
@@ -101,34 +90,27 @@ def remember_symbol(symbol):
 
 # --- Checking and placing an order -------------------------------------------------------------------
 
-def check_order(user_id, order, lock_rows):
+def check_order(user_id, order):
     """Every check an order must pass. Raises UserError if one fails.
 
     `order` is a dictionary with portfolio_id, symbol, action, unit and amount.
-    With lock_rows=True, the rows are locked (SELECT ... FOR UPDATE) until we commit, so nobody
+    with_for_update() locks the rows (SELECT ... FOR UPDATE) until the request ends, so nobody
     else can change the cash, the shares or the price between our checks and our changes.
     Returns what place_order() needs: the portfolio, the stock, the holding, the number of
     shares, the price and the total.
     """
-    portfolio_query = Portfolio.query.filter_by(portfolio_id=order["portfolio_id"], user_id=user_id)
-    stock_query = Issuer.query.filter_by(symbol=order["symbol"])
-    if lock_rows:
-        portfolio_query = portfolio_query.with_for_update()
-        stock_query = stock_query.with_for_update()
-
-    portfolio = portfolio_query.first()
+    portfolio = (Portfolio.query.filter_by(portfolio_id=order["portfolio_id"], user_id=user_id)
+                 .with_for_update().first())
     if portfolio is None:
         abort(404)  # someone else's portfolio
-    stock = stock_query.first()
+    stock = Issuer.query.filter_by(symbol=order["symbol"]).with_for_update().first()
 
     holding = None
     shares_owned = Decimal(0)
     if stock is not None:
-        holding_query = Inventory.query.filter_by(portfolio_id=portfolio.portfolio_id,
-                                                  issuer_id=stock.issuer_id)
-        if lock_rows:
-            holding_query = holding_query.with_for_update()
-        holding = holding_query.first()
+        holding = (Inventory.query
+                   .filter_by(portfolio_id=portfolio.portfolio_id, issuer_id=stock.issuer_id)
+                   .with_for_update().first())
         if holding is not None:
             shares_owned = holding.quantity
 
@@ -213,7 +195,7 @@ def place_order(user_id, order):
     so we never take the cash without adding the shares (or the other way round).
     """
     try:
-        checked = check_order(user_id, order, lock_rows=True)
+        checked = check_order(user_id, order)
         if order["action"] == "Buy":
             buy(checked)
         else:
@@ -245,13 +227,8 @@ def place_order(user_id, order):
 
 # --- Pages -------------------------------------------------------------------------------------------
 
-def show_trade_page(portfolio_id_text=None, symbol=None, form_values=None, errors=None):
+def show_trade_page(portfolio_id_text=None, symbol=None):
     """The Trade page. When a symbol is given, it also shows the quote and the order form."""
-    if form_values is None:
-        form_values = {}
-    if errors is None:
-        errors = {}
-
     portfolios = list_portfolios(current_user.user_id)
     portfolio = choose_portfolio(current_user.user_id, portfolios, portfolio_id_text)
 
@@ -259,11 +236,10 @@ def show_trade_page(portfolio_id_text=None, symbol=None, form_values=None, error
     if symbol and portfolio is not None:
         try:
             quote = get_quote(current_user.user_id, symbol, portfolio.portfolio_id)
-            remember_symbol(quote["symbol"])
-            symbol = quote["symbol"]
+            remember_symbol(quote["stock"].symbol)
+            symbol = quote["stock"].symbol
         except UserError as error:
-            if "symbol" not in errors:
-                errors["symbol"] = error.message
+            flash(error.message, "error")  # "Symbol not found"
 
     market_text = None
     quote_change = None
@@ -271,8 +247,8 @@ def show_trade_page(portfolio_id_text=None, symbol=None, form_values=None, error
     can_sell = False
     if quote is not None:
         market_text = market.status_text(quote["market"])
-        quote_change = change_text(quote)
-        market_value = to_cents(quote["shares_owned"] * quote["price"])
+        quote_change = change_text(quote["stock"])
+        market_value = to_cents(quote["shares_owned"] * quote["stock"].current_price)
         can_sell = quote["shares_owned"] > 0  # Sell is greyed out when they own none
 
     return render_template(
@@ -286,13 +262,16 @@ def show_trade_page(portfolio_id_text=None, symbol=None, form_values=None, error
         market_value=market_value,
         can_sell=can_sell,
         history=session.get("symbol_history", []),
-        values=form_values,
-        errors=errors,
-        actions=ACTIONS,
         units=UNITS,
         order_types=ORDER_TYPES,
         timings=TIMINGS,
     )
+
+
+def back_to_trade_page(portfolio_id, symbol, message):
+    """Show `message` in red at the top, and go back to the Trade page for this portfolio and stock."""
+    flash(message, "error")
+    return redirect(url_for("trade.trade_page", portfolio=portfolio_id, symbol=symbol))
 
 
 @bp.get("/trade")
@@ -307,36 +286,32 @@ def trade_page():
 def preview():
     """Check the order and show the "Review Your Order" page. Nothing is saved yet."""
     portfolio_id_text = request.form.get("portfolio", "")
-    typed_symbol = request.form.get("symbol", "").strip()
-    form_values = {
-        "action": request.form.get("action", "").strip(),
-        "unit": request.form.get("unit", "").strip(),
-        "amount": request.form.get("amount", "").strip(),
-    }
+    symbol = request.form.get("symbol", "").strip().upper()
+    action = request.form.get("action", "")
+    unit = request.form.get("unit", "")
     if not portfolio_id_text.isdigit():
         abort(404)
 
     try:
-        if form_values["action"] == "":
-            raise UserError("Choose Buy or Sell.", "action")
-        if form_values["unit"] == "Shares":
-            amount = parse_shares(form_values["amount"])
+        if action == "":
+            raise UserError("Choose Buy or Sell.")
+        if unit == "Shares":
+            amount = parse_shares(request.form.get("amount"))
         else:
-            amount = parse_money(form_values["amount"])
+            amount = parse_money(request.form.get("amount"))
 
         order = {
             "portfolio_id": int(portfolio_id_text),
-            "symbol": typed_symbol.upper(),
-            "action": form_values["action"],
-            "unit": form_values["unit"],
+            "symbol": symbol,
+            "action": action,
+            "unit": unit,
             "amount": amount,
             "order_type": "Market",
             "timing": "Day Only",
         }
-        checked = check_order(current_user.user_id, order, lock_rows=False)
+        checked = check_order(current_user.user_id, order)
     except UserError as error:
-        errors = {error.field: error.message}
-        return show_trade_page(portfolio_id_text, typed_symbol, form_values, errors)
+        return back_to_trade_page(portfolio_id_text, symbol, error.message)
 
     # Keep the order in the session until "Place order". The session can't hold a Decimal,
     # so the amount is saved as text.
@@ -362,15 +337,14 @@ def confirm():
     # pop() takes the order out of the session, so pressing the button twice can't buy twice.
     order = session.pop("pending_order", None)
     if order is None:
-        return show_trade_page(errors={"form": "This order has expired. Please review it again."})
+        flash("This order has expired. Please review it again.", "error")
+        return redirect(url_for("trade.trade_page"))
     order["amount"] = Decimal(order["amount"])
 
     try:
         result = place_order(current_user.user_id, order)
     except UserError as error:
-        form_values = {"action": order["action"], "unit": order["unit"], "amount": str(order["amount"])}
-        return show_trade_page(str(order["portfolio_id"]), order["symbol"], form_values,
-                               {error.field: error.message})
+        return back_to_trade_page(order["portfolio_id"], order["symbol"], error.message)
 
     portfolio = get_portfolio(current_user.user_id, order["portfolio_id"])
     filled_at = now_utc().astimezone(ARIZONA)

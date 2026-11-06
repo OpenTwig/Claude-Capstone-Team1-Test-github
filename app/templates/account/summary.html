@@ -49,20 +49,15 @@
       </div>
     </div>
 
-    {# The Create Portfolio form folds away. It starts open if it had an error, or if there
-       are no portfolios yet. #}
+    {# The Create Portfolio form folds away. It starts open when there are no portfolios yet. #}
     <div class="collapse {% if open_form %}show{% endif %}" id="create-portfolio">
       <form method="post" action="{{ url_for('account.create_portfolio') }}" class="card-body border-bottom">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row g-3 align-items-end">
           <div class="col-md-5">
             <label class="form-label" for="account_name">Account Name</label>
-            <input class="form-control {% if form_errors.account_name %}is-invalid{% endif %}"
-                   id="account_name" name="account_name" maxlength="100"
-                   value="{{ form_values.get('account_name', '') }}" placeholder="e.g. Retirement">
-            {% if form_errors.account_name %}
-              <div class="invalid-feedback">{{ form_errors.account_name }}</div>
-            {% endif %}
+            <input class="form-control" id="account_name" name="account_name" maxlength="100"
+                   placeholder="e.g. Retirement">
           </div>
           <div class="col-md-4">
             <label class="form-label" for="account_type">Account Type</label>
@@ -71,9 +66,6 @@
                 <option>{{ account_type }}</option>
               {% endfor %}
             </select>
-            {% if form_errors.account_type %}
-              <div class="invalid-feedback d-block">{{ form_errors.account_type }}</div>
-            {% endif %}
           </div>
           <div class="col-md-3 d-grid">
             <button type="submit" class="btn btn-primary">Create</button>

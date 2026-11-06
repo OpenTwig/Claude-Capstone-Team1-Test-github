@@ -44,11 +44,7 @@ def get_positions(portfolio):
     positions = []
     for holding in holdings:
         stock = holding.issuer
-        price = stock.current_price
-        previous_close = stock.previous_close(today())
-        price_change = price - previous_close
-
-        market_value = to_cents(holding.quantity * price)
+        market_value = to_cents(holding.quantity * stock.current_price)
         cost_basis = to_cents(holding.quantity * holding.average_cost)
 
         positions.append({
@@ -57,11 +53,11 @@ def get_positions(portfolio):
             "company_name": stock.company_name,
             "is_listed": stock.is_listed,
             "quantity": holding.quantity,
-            "price": price,
-            "price_change": price_change,
-            "price_change_pct": percent(price_change, previous_close),
+            "price": stock.current_price,
+            "price_change": stock.change,
+            "price_change_pct": stock.change_pct,
             "market_value": market_value,
-            "day_change": to_cents(holding.quantity * price_change),
+            "day_change": to_cents(holding.quantity * stock.change),
             "cost_basis": cost_basis,
             "gain_loss": market_value - cost_basis,
             "reinvest": holding.reinvest,
@@ -167,25 +163,17 @@ def chart_data(user_id, portfolio_id, value_now):
         query = query.filter(PortfolioValueDaily.portfolio_id == portfolio_id)
     rows = query.group_by(PortfolioValueDaily.value_date).order_by(PortfolioValueDaily.value_date).all()
 
-    labels = []
-    values = []
-    for day, total in rows:
-        labels.append(day.isoformat())
-        values.append(str(total))
-    labels.append(today().isoformat())
-    values.append(str(value_now))
+    labels = [day.isoformat() for day, total in rows] + [today().isoformat()]
+    values = [str(total) for day, total in rows] + [str(value_now)]
     return {"labels": labels, "values": values}
 
 
 # --- Pages -------------------------------------------------------------------------------------------
 
-def show_account_page(form_values=None, form_errors=None):
-    """The Account page. After a Create Portfolio error, it shows the form again with the error."""
-    if form_values is None:
-        form_values = {}
-    if form_errors is None:
-        form_errors = {}
-
+@bp.get("/account")
+@customer_required
+def summary():
+    """The Account page: every portfolio's totals, the chart, and the Create Portfolio form."""
     summaries = []
     all_positions = []
     total_cash = ZERO
@@ -215,30 +203,19 @@ def show_account_page(form_values=None, form_errors=None):
         rows=shown,
         query=search,
         account_types=ACCOUNT_TYPES,
-        form_values=form_values,
-        form_errors=form_errors,
-        open_form=len(form_errors) > 0 or len(summaries) == 0,
+        open_form=len(summaries) == 0,  # the Create Portfolio form starts open until there is one
         chart=chart_data(current_user.user_id, None, totals["total_value"]),
     )
-
-
-@bp.get("/account")
-@customer_required
-def summary():
-    return show_account_page()
 
 
 @bp.post("/account/portfolios")
 @customer_required
 def create_portfolio():
-    form_values = {
-        "account_name": request.form.get("account_name", ""),
-        "account_type": request.form.get("account_type", ""),
-    }
     try:
-        name = check_text(form_values["account_name"], "account_name", "Account name")
+        name = check_text(request.form.get("account_name"), "account_name", "Account name")
     except UserError as error:
-        return show_account_page(form_values, {error.field: error.message})
+        flash(error.message, "error")  # shows in red at the top of the page
+        return redirect(url_for("account.summary"))
 
     account_number = str(secrets.randbelow(10**10)).zfill(10)  # a random 10-digit number
     portfolio = Portfolio(user_id=current_user.user_id, account_name=name,

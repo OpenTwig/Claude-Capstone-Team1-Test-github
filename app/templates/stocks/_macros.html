@@ -35,7 +35,7 @@
                       aria-label="{{ stock.symbol }} price, last 30 days"></canvas>
             </span>
             <span class="text-end">
-              <span class="d-block">{{ stock.price | money }}</span>
+              <span class="d-block">{{ stock.current_price | money }}</span>
               <span class="d-block small">{{ change(stock.change, stock.change_pct) }}</span>
             </span>
           </a>

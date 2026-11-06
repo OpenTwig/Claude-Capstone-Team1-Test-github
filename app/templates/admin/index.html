@@ -1,42 +1,5 @@
 {% extends "base.html" %}
-{% from "_pager.html" import pager %}
-{% from "_macros.html" import field_error %}
 {% block title %}Administration · Stock Trading System{% endblock %}
-
-{# ---- Small helpers for the forms on this page ----
-   Several forms share this page, so admin.py keys `forms` (what was typed) and `errors` by the
-   form's name: "add_user", "add_stock", "schedule", "user-7", "stock-3". #}
-
-{# What was typed into a box before an error, so it can be filled back in (or `default`). #}
-{% macro typed(form_name, field, default="") %}
-  {{- forms.get(form_name, {}).get(field, default) -}}
-{% endmacro %}
-
-{# "is-invalid" (Bootstrap's red border) if this box has an error. #}
-{% macro red_if_error(form_name, field) %}
-  {%- if errors.get(form_name, {}).get(field) %}is-invalid{% endif -%}
-{% endmacro %}
-
-{# The error message for a box, if it has one. #}
-{% macro error_for(form_name, field) %}
-  {{ field_error(errors.get(form_name, {}).get(field)) }}
-{% endmacro %}
-
-{# The page numbers of both lists, sent with each button in the lists, so the page comes back
-   to the same place afterwards. #}
-{% macro keep_list_pages() %}
-  <input type="hidden" name="users_page" value="{{ user_page.page }}">
-  <input type="hidden" name="stocks_page" value="{{ stock_page.page }}">
-{% endmacro %}
-
-{# The addresses of the list pages, for the page links under each list. #}
-{% macro users_page_link(number) %}
-  {{- url_for('admin.index', users_page=number, stocks_page=stock_page.page, _anchor='users') -}}
-{% endmacro %}
-{% macro stocks_page_link(number) %}
-  {{- url_for('admin.index', users_page=user_page.page, stocks_page=number, _anchor='stocks') -}}
-{% endmacro %}
-
 
 {% block content %}
   <h1 class="h3 mb-3">Administration</h1>
@@ -62,52 +25,44 @@
           <div class="row g-3">
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="user-name">Full Name</label>
-              <input class="form-control {{ red_if_error('add_user', 'name') }}" id="user-name" name="name"
-                     maxlength="255" value="{{ typed('add_user', 'name') }}">
-              {{ error_for("add_user", "name") }}
+              <input class="form-control" id="user-name" name="name"
+                     maxlength="255">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="user-ssn">SSN</label>
-              {# Never filled back in after an error: an SSN is never shown again. #}
-              <input class="form-control {{ red_if_error('add_user', 'ssn') }}" id="user-ssn" name="ssn"
+              <input class="form-control" id="user-ssn" name="ssn"
                      placeholder="XXX-XX-XXXX" inputmode="numeric" autocomplete="off" maxlength="11">
-              {{ error_for("add_user", "ssn") }}
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="user-email">Email</label>
-              <input class="form-control {{ red_if_error('add_user', 'email') }}" id="user-email" name="email"
-                     type="email" maxlength="254" autocomplete="off" value="{{ typed('add_user', 'email') }}">
-              {{ error_for("add_user", "email") }}
+              <input class="form-control" id="user-email" name="email"
+                     type="email" maxlength="254" autocomplete="off">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="user-dob">Date of Birth</label>
-              <input class="form-control {{ red_if_error('add_user', 'date_of_birth') }}" id="user-dob"
-                     name="date_of_birth" placeholder="MM/DD/YYYY" value="{{ typed('add_user', 'date_of_birth') }}">
-              {{ error_for("add_user", "date_of_birth") }}
+              <input class="form-control" id="user-dob"
+                     name="date_of_birth" placeholder="MM/DD/YYYY">
             </div>
             <div class="col-12">
               <label class="form-label" for="user-role">Role</label>
               <select class="form-select" id="user-role" name="role">
                 {% for role in roles %}
-                  <option {% if typed('add_user', 'role', 'Customer') == role %}selected{% endif %}>{{ role }}</option>
+                  <option {% if role == "Customer" %}selected{% endif %}>{{ role }}</option>
                 {% endfor %}
               </select>
-              {{ error_for("add_user", "role") }}
             </div>
             {# Only used when the Role is Administrator; ignored for customers. #}
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="user-access">Access Level
                 <span class="text-body-secondary">(administrators only)</span></label>
-              <input class="form-control {{ red_if_error('add_user', 'access_level') }}" id="user-access"
-                     name="access_level" maxlength="20" value="{{ typed('add_user', 'access_level') }}">
-              {{ error_for("add_user", "access_level") }}
+              <input class="form-control" id="user-access"
+                     name="access_level" maxlength="20">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="user-department">Department
                 <span class="text-body-secondary">(administrators only, optional)</span></label>
-              <input class="form-control {{ red_if_error('add_user', 'department') }}" id="user-department"
-                     name="department" maxlength="100" value="{{ typed('add_user', 'department') }}">
-              {{ error_for("add_user", "department") }}
+              <input class="form-control" id="user-department"
+                     name="department" maxlength="100">
             </div>
           </div>
           <div class="d-flex justify-content-end mt-3">
@@ -126,50 +81,42 @@
           <div class="row g-3">
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="stock-name">Stock Name</label>
-              <input class="form-control {{ red_if_error('add_stock', 'company_name') }}" id="stock-name"
-                     name="company_name" maxlength="255" value="{{ typed('add_stock', 'company_name') }}">
-              {{ error_for("add_stock", "company_name") }}
+              <input class="form-control" id="stock-name"
+                     name="company_name" maxlength="255">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="stock-symbol">Stock Symbol</label>
-              <input class="form-control text-uppercase {{ red_if_error('add_stock', 'symbol') }}" id="stock-symbol"
-                     name="symbol" maxlength="10" autocomplete="off" value="{{ typed('add_stock', 'symbol') }}">
-              {{ error_for("add_stock", "symbol") }}
+              <input class="form-control text-uppercase" id="stock-symbol"
+                     name="symbol" maxlength="10" autocomplete="off">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="stock-price">Stock Price ($)</label>
-              <input class="form-control {{ red_if_error('add_stock', 'price') }}" id="stock-price" name="price"
-                     inputmode="decimal" value="{{ typed('add_stock', 'price') }}">
-              {{ error_for("add_stock", "price") }}
+              <input class="form-control" id="stock-price" name="price"
+                     inputmode="decimal">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="stock-shares">Number of Shares</label>
-              <input class="form-control {{ red_if_error('add_stock', 'shares') }}" id="stock-shares" name="shares"
-                     inputmode="decimal" value="{{ typed('add_stock', 'shares') }}">
-              {{ error_for("add_stock", "shares") }}
+              <input class="form-control" id="stock-shares" name="shares"
+                     inputmode="decimal">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6">
               <label class="form-label" for="stock-exchange">Exchange
                 <span class="text-body-secondary">(optional)</span></label>
-              <input class="form-control {{ red_if_error('add_stock', 'exchange') }}" id="stock-exchange"
-                     name="exchange" maxlength="10" value="{{ typed('add_stock', 'exchange') }}">
-              {{ error_for("add_stock", "exchange") }}
+              <input class="form-control" id="stock-exchange"
+                     name="exchange" maxlength="10">
             </div>
             <div class="col-sm-6 col-lg-12 col-xl-6 d-flex align-items-end">
-              {# Ticked unless it was unticked before an error. #}
-              {% set randomize = typed('add_stock', 'randomize_history', 'on') %}
               <div class="form-check form-switch mb-2">
                 <input class="form-check-input" type="checkbox" role="switch" id="stock-randomize"
-                       name="randomize_history" {% if randomize == "on" %}checked{% endif %}>
+                       name="randomize_history" checked>
                 <label class="form-check-label" for="stock-randomize">Randomize History</label>
               </div>
             </div>
             <div class="col-12">
               <label class="form-label" for="stock-description">Stock Description
                 <span class="text-body-secondary">(up to {{ description_max }} characters)</span></label>
-              <textarea class="form-control {{ red_if_error('add_stock', 'description') }}" id="stock-description"
-                        name="description" rows="2" maxlength="{{ description_max }}">{{ typed('add_stock', 'description') }}</textarea>
-              {{ error_for("add_stock", "description") }}
+              <textarea class="form-control" id="stock-description"
+                        name="description" rows="2" maxlength="{{ description_max }}"></textarea>
             </div>
           </div>
           <div class="d-flex justify-content-end mt-3">
@@ -204,15 +151,13 @@
           <div class="row g-3">
             <div class="col-6">
               <label class="form-label" for="open-time">Open Time</label>
-              <input class="form-control {{ red_if_error('schedule', 'open_time') }}" type="time" id="open-time"
-                     name="open_time" value="{{ typed('schedule', 'open_time', schedule.open_time.strftime('%H:%M')) }}">
-              {{ error_for("schedule", "open_time") }}
+              <input class="form-control" type="time" id="open-time"
+                     name="open_time" value="{{ schedule.open_time.strftime('%H:%M') }}">
             </div>
             <div class="col-6">
               <label class="form-label" for="close-time">Close Time</label>
-              <input class="form-control {{ red_if_error('schedule', 'close_time') }}" type="time" id="close-time"
-                     name="close_time" value="{{ typed('schedule', 'close_time', schedule.close_time.strftime('%H:%M')) }}">
-              {{ error_for("schedule", "close_time") }}
+              <input class="form-control" type="time" id="close-time"
+                     name="close_time" value="{{ schedule.close_time.strftime('%H:%M') }}">
             </div>
 
             {# One checkbox per day. The value is the day's number: 0 = Monday ... 6 = Sunday. #}
@@ -222,11 +167,10 @@
                 {% set day_number = loop.index0 %}
                 <div class="form-check form-check-inline">
                   <input class="form-check-input" type="checkbox" name="trading_days" value="{{ day_number }}"
-                         id="day-{{ day_number }}" {% if day_number in chosen_days %}checked{% endif %}>
+                         id="day-{{ day_number }}" {% if day_number in schedule.trading_days %}checked{% endif %}>
                   <label class="form-check-label" for="day-{{ day_number }}">{{ day_name[:3] }}</label>
                 </div>
               {% endfor %}
-              {{ error_for("schedule", "trading_days") }}
             </div>
 
             {# Market Control: follow the schedule, or force the market open or closed. #}
@@ -235,11 +179,10 @@
               <div class="btn-group btn-group-sm w-100" role="radiogroup" aria-label="Market Control">
                 {% for value, label, colour in override_choices %}
                   <input type="radio" class="btn-check" name="market_override" id="override-{{ value }}"
-                         value="{{ value }}" autocomplete="off" {% if value == chosen_override %}checked{% endif %}>
+                         value="{{ value }}" autocomplete="off" {% if value == schedule.override %}checked{% endif %}>
                   <label class="btn btn-outline-{{ colour }}" for="override-{{ value }}">{{ label }}</label>
                 {% endfor %}
               </div>
-              {{ error_for("schedule", "market_override") }}
               <div class="form-text">Force open or Force closed ignores the hours, days and holidays until
                 Schedule is chosen again.</div>
             </div>
@@ -270,7 +213,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for user in user_page.rows %}
+              {% for user in users %}
                 {% set form_name = "user-" ~ user.user_id %}
                 {% set is_me = user.user_id == current_user.user_id %}
                 <tr {% if not user.is_active %}class="text-body-secondary"{% endif %}>
@@ -292,48 +235,42 @@
                             action="{{ url_for('admin.issue_temporary_password', user_id=user.user_id) }}"
                             data-confirm="Give {{ user.name }} a new temporary password? Their current password stops working.">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        {{ keep_list_pages() }}
                         <button type="submit" class="btn btn-sm btn-outline-secondary">New temp password</button>
                       </form>
                       <form method="post" class="d-inline"
                             action="{{ url_for('admin.deactivate_user', user_id=user.user_id) }}"
                             data-confirm="Deactivate {{ user.name }}? They won't be able to log in. Their records are kept.">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        {{ keep_list_pages() }}
                         <button type="submit" class="btn btn-sm btn-outline-danger">Deactivate</button>
                       </form>
                     {% endif %}
                   </td>
                 </tr>
 
-                {# The Edit form, folded away. It starts open if it had an error. #}
-                <tr class="collapse {% if editing == form_name %}show{% endif %}" id="edit-{{ form_name }}">
+                {# The Edit form, folded away until Edit is pressed. #}
+                <tr class="collapse" id="edit-{{ form_name }}">
                   <td colspan="5" class="bg-body-tertiary">
                     {# Only the name, email and date of birth can be changed: never the SSN or role. #}
                     <form method="post" action="{{ url_for('admin.edit_user', user_id=user.user_id) }}"
                           class="row g-2 align-items-end">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      {{ keep_list_pages() }}
                       <div class="col-md-4">
                         <label class="form-label small" for="{{ form_name }}-name">Full Name</label>
-                        <input class="form-control form-control-sm {{ red_if_error(form_name, 'name') }}"
+                        <input class="form-control form-control-sm"
                                id="{{ form_name }}-name" name="name" maxlength="255"
-                               value="{{ typed(form_name, 'name', user.name) }}">
-                        {{ error_for(form_name, "name") }}
+                               value="{{ user.name }}">
                       </div>
                       <div class="col-md-4">
                         <label class="form-label small" for="{{ form_name }}-email">Email</label>
-                        <input class="form-control form-control-sm {{ red_if_error(form_name, 'email') }}"
+                        <input class="form-control form-control-sm"
                                id="{{ form_name }}-email" name="email" maxlength="254"
-                               value="{{ typed(form_name, 'email', user.email) }}">
-                        {{ error_for(form_name, "email") }}
+                               value="{{ user.email }}">
                       </div>
                       <div class="col-md-2">
                         <label class="form-label small" for="{{ form_name }}-dob">Date of Birth</label>
-                        <input class="form-control form-control-sm {{ red_if_error(form_name, 'date_of_birth') }}"
+                        <input class="form-control form-control-sm"
                                id="{{ form_name }}-dob" name="date_of_birth"
-                               value="{{ typed(form_name, 'date_of_birth', user.date_of_birth.strftime('%m/%d/%Y')) }}">
-                        {{ error_for(form_name, "date_of_birth") }}
+                               value="{{ user.date_of_birth.strftime('%m/%d/%Y') }}">
                       </div>
                       <div class="col-md-2 d-grid">
                         <button type="submit" class="btn btn-sm btn-primary">Save</button>
@@ -345,7 +282,6 @@
             </tbody>
           </table>
         </div>
-        <div class="card-footer">{{ pager(user_page, users_page_link) }}</div>
       </section>
     </div>
 
@@ -353,7 +289,7 @@
     <div class="col-12">
       <section class="card" id="stocks">
         <h2 class="card-header h5 mb-0">Stocks</h2>
-        {% if not stock_page.rows %}
+        {% if not stocks %}
           <p class="card-body text-body-secondary mb-0">No stocks yet. Add one above.</p>
         {% else %}
           <div class="table-responsive admin-list">
@@ -369,7 +305,7 @@
                 </tr>
               </thead>
               <tbody>
-                {% for stock in stock_page.rows %}
+                {% for stock in stocks %}
                   {% set form_name = "stock-" ~ stock.issuer_id %}
                   <tr {% if not stock.is_listed %}class="text-body-secondary"{% endif %}>
                     <td>
@@ -388,41 +324,36 @@
                               action="{{ url_for('admin.delist_stock', issuer_id=stock.issuer_id) }}"
                               data-confirm="Delist {{ stock.symbol }}? It can't be found or bought any more. This can't be undone.">
                           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                          {{ keep_list_pages() }}
                           <button type="submit" class="btn btn-sm btn-outline-danger">Delist</button>
                         </form>
                       {% endif %}
                     </td>
                   </tr>
 
-                  {# The Edit form, folded away. It starts open if it had an error. #}
-                  <tr class="collapse {% if editing == form_name %}show{% endif %}" id="edit-{{ form_name }}">
+                  {# The Edit form, folded away until Edit is pressed. #}
+                  <tr class="collapse" id="edit-{{ form_name }}">
                     <td colspan="6" class="bg-body-tertiary">
                       {# Only the name, description and exchange can be changed: never the symbol or price. #}
                       <form method="post" action="{{ url_for('admin.edit_stock', issuer_id=stock.issuer_id) }}"
                             class="row g-2 align-items-end">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        {{ keep_list_pages() }}
                         <div class="col-md-4">
                           <label class="form-label small" for="{{ form_name }}-name">Stock Name</label>
-                          <input class="form-control form-control-sm {{ red_if_error(form_name, 'company_name') }}"
+                          <input class="form-control form-control-sm"
                                  id="{{ form_name }}-name" name="company_name" maxlength="255"
-                                 value="{{ typed(form_name, 'company_name', stock.company_name) }}">
-                          {{ error_for(form_name, "company_name") }}
+                                 value="{{ stock.company_name }}">
                         </div>
                         <div class="col-md-4">
                           <label class="form-label small" for="{{ form_name }}-description">Description</label>
-                          <input class="form-control form-control-sm {{ red_if_error(form_name, 'description') }}"
+                          <input class="form-control form-control-sm"
                                  id="{{ form_name }}-description" name="description" maxlength="{{ description_max }}"
-                                 value="{{ typed(form_name, 'description', stock.description or '') }}">
-                          {{ error_for(form_name, "description") }}
+                                 value="{{ stock.description or '' }}">
                         </div>
                         <div class="col-md-2">
                           <label class="form-label small" for="{{ form_name }}-exchange">Exchange</label>
-                          <input class="form-control form-control-sm {{ red_if_error(form_name, 'exchange') }}"
+                          <input class="form-control form-control-sm"
                                  id="{{ form_name }}-exchange" name="exchange" maxlength="10"
-                                 value="{{ typed(form_name, 'exchange', stock.exchange or '') }}">
-                          {{ error_for(form_name, "exchange") }}
+                                 value="{{ stock.exchange or '' }}">
                         </div>
                         <div class="col-md-2 d-grid">
                           <button type="submit" class="btn btn-sm btn-primary">Save</button>
@@ -434,7 +365,6 @@
               </tbody>
             </table>
           </div>
-          <div class="card-footer">{{ pager(stock_page, stocks_page_link) }}</div>
         {% endif %}
       </section>
     </div>

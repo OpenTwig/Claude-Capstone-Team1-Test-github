@@ -4,7 +4,6 @@
     Money        to_cents(), percent(), money() and shares() for showing numbers
     Forms        check_text(), check_digits(), parse_money(), parse_shares()
     Encryption   encrypt(), decrypt()
-    Pages        make_page() splits a long list into pages
     Portfolios   list_portfolios(), get_portfolio()
 """
 import re
@@ -162,28 +161,6 @@ def encrypt(plain_text):
 def decrypt(encrypted_text):
     key = current_app.config["FIELD_ENCRYPTION_KEY"]
     return Fernet(key).decrypt(encrypted_text.encode()).decode()
-
-
-# --- Splitting a long list into pages ----------------------------------------------------------------
-
-def make_page(query, page_number, per_page):
-    """One page of a query's results, with what _pager.html needs to draw the page links.
-
-    Uses Flask-SQLAlchemy's paginate(). For example, page 2 of 57 rows with 10 per page holds
-    rows 11 to 20.
-    """
-    result = query.paginate(page=page_number, per_page=per_page, error_out=False)
-    # The page links to show, for example [1, None, 5, 6, 7, None, 12]. None means "…".
-    links = list(result.iter_pages(left_edge=1, left_current=1, right_current=2, right_edge=1))
-    return {
-        "rows": result.items,
-        "page": result.page,
-        "pages": max(result.pages, 1),
-        "total": result.total,
-        "first": result.first,  # the number of the first row on this page
-        "last": result.last,
-        "numbers": links,
-    }
 
 
 # --- Portfolios --------------------------------------------------------------------------------------

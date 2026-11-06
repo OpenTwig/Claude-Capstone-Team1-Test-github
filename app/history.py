@@ -1,20 +1,17 @@
-"""The History page: every trade and transfer, newest first, 20 to a page.
+"""The History page: every trade and transfer, newest first.
 
 Customers see the transactions in all of their own portfolios.
 Administrators see every customer's transactions.
 """
 from datetime import timezone
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template
 from flask_login import current_user
 
-from app.common import ARIZONA, decrypt, make_page, money, shares
+from app.common import ARIZONA, decrypt, money, shares
 from app.models import History, Portfolio, mask
 
 bp = Blueprint("history", __name__)
-
-ROWS_PER_PAGE = 20
-
 
 def to_arizona_time(stored_time):
     """Turn a time read from the database (UTC) into Arizona time, for showing on a page."""
@@ -87,9 +84,7 @@ def history_page():
         query = query.filter(Portfolio.user_id == current_user.user_id)
     query = query.order_by(History.timestamp.desc(), History.history_id.desc())  # newest first
 
-    page = make_page(query, request.args.get("page", 1, type=int), ROWS_PER_PAGE)
     lines = []
-    for history_row in page["rows"]:
+    for history_row in query.all():
         lines.append(describe(history_row))
-
-    return render_template("history/history.html", lines=lines, page=page, is_admin=current_user.is_admin)
+    return render_template("history/history.html", lines=lines, is_admin=current_user.is_admin)

@@ -15,6 +15,9 @@ Money columns use Numeric(10, 2) and share columns Numeric(18, 6). Python reads 
 Decimal, which is exact. (A float would turn $0.10 + $0.20 into 0.30000000000000004.)
 All times are stored in UTC.
 """
+from datetime import timedelta
+from functools import cached_property
+
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects.mysql import DATETIME
@@ -149,21 +152,50 @@ class Issuer(db.Model):
     # A delisted stock can't be found or bought, but people who own it can still sell it.
     is_listed = db.Column(db.Boolean, nullable=False, default=True)
 
-    def previous_close(self, day):
-        """The closing price of the last trading day before `day`.
+    # The pages show each stock's change since yesterday, so it is worked out here, once, instead
+    # of in every page. (These import from common.py inside the function, because common.py
+    # imports this file.)
+
+    @cached_property  # works it out the first time it is used, then remembers it
+    def previous_close(self):
+        """The closing price of the last trading day before today.
 
         A brand-new stock has no earlier day, so we use its current price instead.
         """
+        from app.common import today
         last_day = (
             StockPrice.query
             .filter(StockPrice.issuer_id == self.issuer_id)
-            .filter(StockPrice.price_date < day)
+            .filter(StockPrice.price_date < today())
             .order_by(StockPrice.price_date.desc())
             .first()
         )
         if last_day is None:
             return self.current_price
         return last_day.close_price
+
+    @property
+    def change(self):
+        """How much the price has moved since yesterday's close, in dollars."""
+        return self.current_price - self.previous_close
+
+    @property
+    def change_pct(self):
+        """The same change, as a percentage of yesterday's close."""
+        from app.common import percent
+        return percent(self.change, self.previous_close)
+
+    def recent_closes(self, days):
+        """The closing prices of the last `days` days, oldest first (for the small charts)."""
+        from app.common import today
+        rows = (
+            StockPrice.query
+            .filter(StockPrice.issuer_id == self.issuer_id)
+            .filter(StockPrice.price_date > today() - timedelta(days=days))
+            .order_by(StockPrice.price_date)
+            .all()
+        )
+        return [row.close_price for row in rows]
 
 
 class StockPrice(db.Model):

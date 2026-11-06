@@ -61,7 +61,7 @@ def menu_labels(names_and_ids, masked_numbers):
     return labels
 
 
-def show_transfer_page(errors=None, form_values=None, bank_errors=None, bank_form_values=None):
+def show_transfer_page():
     banks = list_bank_accounts(current_user.user_id)
     portfolios = list_portfolios(current_user.user_id)
 
@@ -84,10 +84,6 @@ def show_transfer_page(errors=None, form_values=None, bank_errors=None, bank_for
         bank_labels=menu_labels(bank_names, bank_numbers),
         portfolio_labels=menu_labels(portfolio_names, portfolio_numbers),
         today=today(),
-        errors=errors or {},
-        values=form_values or {},
-        bank_errors=bank_errors or {},
-        bank_values=bank_form_values or {},
         support_email=SUPPORT_EMAIL,
         support_hours=SUPPORT_HOURS,
     )
@@ -200,34 +196,24 @@ def transfer_page():
     return show_transfer_page()
 
 
+# Both forms on this page work like chapter 4 of the handbook: if something is wrong, flash() the
+# message (it shows in red at the top of the page) and reload the page.
+
 @bp.post("/transfer")
 @customer_required
 def submit_transfer():
-    form_values = {
-        "from_account": request.form.get("from_account", ""),
-        "to_account": request.form.get("to_account", ""),
-        "amount": request.form.get("amount", ""),
-    }
-    from_kind, from_id = read_menu_choice(form_values["from_account"])
-    to_kind, to_id = read_menu_choice(form_values["to_account"])
-
-    # Check every field first, so all the problems show at once.
-    errors = {}
-    if from_kind is None:
-        errors["from_account"] = "Choose where the money comes from."
-    if to_kind is None:
-        errors["to_account"] = "Choose where the money goes."
-    elif from_kind == "bank" and to_kind == "bank":
-        errors["to_account"] = ("Money can't move from one bank account to another. "
-                                "Choose a portfolio for From or To.")
+    from_kind, from_id = read_menu_choice(request.form.get("from_account"))
+    to_kind, to_id = read_menu_choice(request.form.get("to_account"))
     try:
-        amount = parse_money(form_values["amount"])
-    except UserError as error:
-        errors["amount"] = error.message
-    if errors:
-        return show_transfer_page(errors, form_values)
+        if from_kind is None:
+            raise UserError("Choose where the money comes from.")
+        if to_kind is None:
+            raise UserError("Choose where the money goes.")
+        if from_kind == "bank" and to_kind == "bank":
+            raise UserError("Money can't move from one bank account to another. "
+                            "Choose a portfolio for From or To.")
+        amount = parse_money(request.form.get("amount"))
 
-    try:
         if from_kind == "bank":
             message = deposit(from_id, to_id, amount)
         elif to_kind == "bank":
@@ -236,7 +222,8 @@ def submit_transfer():
             message = move_between_portfolios(from_id, to_id, amount)
     except UserError as error:
         db.session.rollback()  # undo any change, and release the locks
-        return show_transfer_page({error.field: error.message}, form_values)
+        flash(error.message, "error")
+        return redirect(url_for("transfer.transfer_page"))
 
     flash(message, "success")
     return redirect(url_for("transfer.transfer_page"))
@@ -245,23 +232,17 @@ def submit_transfer():
 @bp.post("/transfer/bank-accounts")
 @customer_required
 def add_bank_account():
-    bank_form_values = {
-        "bank_name": request.form.get("bank_name", ""),
-        "account_number": request.form.get("account_number", ""),
-        "routing_number": request.form.get("routing_number", ""),
-        "nickname": request.form.get("nickname", ""),
-    }
+    form = request.form
     try:
-        bank_name = check_text(bank_form_values["bank_name"], "bank_name", "Bank name")
-        account_number = check_digits(bank_form_values["account_number"], "account_number",
+        bank_name = check_text(form.get("bank_name"), "bank_name", "Bank name")
+        account_number = check_digits(form.get("account_number"), "account_number",
                                       r"[0-9]{4,17}", "Account number must be 4 to 17 digits.")
-        routing_number = check_digits(bank_form_values["routing_number"], "routing_number",
+        routing_number = check_digits(form.get("routing_number"), "routing_number",
                                       r"[0-9]{9}", "Routing number must be exactly 9 digits.")
-        nickname = check_text(bank_form_values["nickname"], "nickname", "Nickname")
+        nickname = check_text(form.get("nickname"), "nickname", "Nickname")
     except UserError as error:
-        bank_form_values["account_number"] = ""  # never put an account number back into the page
-        return show_transfer_page(bank_errors={error.field: error.message},
-                                  bank_form_values=bank_form_values)
+        flash(error.message, "error")
+        return redirect(url_for("transfer.transfer_page"))
 
     account = BankAccount(user_id=current_user.user_id, bank_name=bank_name, nickname=nickname,
                           account_number=encrypt(account_number), routing_number=routing_number)

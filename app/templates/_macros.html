@@ -17,14 +17,6 @@
 {% endmacro %}
 
 
-{# The error message under a form box, if there is one. For example: {{ field_error(errors.amount) }} #}
-{% macro field_error(message) %}
-  {% if message %}
-    <div class="invalid-feedback d-block">{{ message }}</div>
-  {% endif %}
-{% endmacro %}
-
-
 {# The numbers for a page's charts, put in the page as JSON for charts.js to read. #}
 {% macro chart_numbers(chart) %}
   <script type="application/json" id="chart-data">{{ chart | tojson }}</script>

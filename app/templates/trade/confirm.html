@@ -17,7 +17,7 @@
           </tr>
           <tr>
             <th class="fw-normal text-body-secondary">Stock</th>
-            <td class="text-end">{{ quote.company_name }} ({{ quote.symbol }})</td>
+            <td class="text-end">{{ quote.stock.company_name }} ({{ quote.stock.symbol }})</td>
           </tr>
           <tr>
             <th class="fw-normal text-body-secondary">Action</th>
@@ -29,7 +29,7 @@
           </tr>
           <tr>
             <th class="fw-normal text-body-secondary">Estimated price</th>
-            <td class="text-end">{{ quote.price | money }}</td>
+            <td class="text-end">{{ quote.stock.current_price | money }}</td>
           </tr>
           <tr>
             <th class="fw-semibold">Estimated total</th>
@@ -51,7 +51,7 @@
 
         <div class="d-flex justify-content-end gap-2">
           <a class="btn btn-outline-secondary"
-             href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=quote.symbol) }}">Change order</a>
+             href="{{ url_for('trade.trade_page', portfolio=portfolio.portfolio_id, symbol=quote.stock.symbol) }}">Change order</a>
           <form method="post" action="{{ url_for('trade.confirm') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-primary">Place order</button>

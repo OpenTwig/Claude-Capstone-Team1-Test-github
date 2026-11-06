@@ -16,16 +16,15 @@ from flask_login import current_user
 from sqlalchemy.exc import IntegrityError
 
 from app import market
-from app.auth import admin_required, hash_password, password_problem
-from app.common import (ONE_CENT, UserError, check_digits, check_text, encrypt, make_page, parse_money,
-                        parse_shares, percent, to_cents, today)
+from app.auth import admin_required, bcrypt, password_problem
+from app.common import (ONE_CENT, UserError, check_digits, check_text, encrypt, parse_money,
+                        parse_shares, to_cents, today)
 from app.models import Admin, Issuer, MarketSchedule, StockPrice, User, db
 
 bp = Blueprint("admin", __name__)
 
 ROLES = ["Customer", "Administrator"]
 DESCRIPTION_MAX_LENGTH = 50
-ROWS_PER_PAGE = 10
 
 # The Market Control buttons: (value saved, button label, Bootstrap colour).
 MARKET_CONTROL_CHOICES = [
@@ -79,7 +78,8 @@ def create_user(name, ssn, email, date_of_birth, password, temporary=True, admin
     customer. Raises UserError if the email is already used.
     """
     user = User(name=name, date_of_birth=date_of_birth, ssn=encrypt(ssn), email=email,
-                password_hash=hash_password(password), must_change_password=temporary)
+                password_hash=bcrypt.generate_password_hash(password).decode("utf-8"),
+                must_change_password=temporary)
     if admin_details is not None:
         access_level, department = admin_details
         user.admin = Admin(access_level=access_level, department=department)
@@ -209,29 +209,6 @@ def days_text(day_numbers):
 
 # --- The page ----------------------------------------------------------------------------------------
 
-def stock_list_page(page_number):
-    """One page of the Stocks list: listed stocks first, then delisted ones."""
-    query = Issuer.query.order_by(Issuer.is_listed.desc(), Issuer.symbol)
-    page = make_page(query, page_number, ROWS_PER_PAGE)
-
-    rows = []
-    for stock in page["rows"]:
-        previous_close = stock.previous_close(today())
-        rows.append({
-            "issuer_id": stock.issuer_id,
-            "symbol": stock.symbol,
-            "company_name": stock.company_name,
-            "exchange": stock.exchange,
-            "description": stock.description,
-            "current_price": stock.current_price,
-            "shares_available": stock.shares_available,
-            "is_listed": stock.is_listed,
-            "change_pct": percent(stock.current_price - previous_close, previous_close),
-        })
-    page["rows"] = rows
-    return page
-
-
 def market_state_text(status):
     """The status line on the Market Time card."""
     if status["forced_open"]:
@@ -241,56 +218,29 @@ def market_state_text(status):
     return market.status_text(status)
 
 
-def show_admin_page(forms=None, errors=None, notice=None, editing=None, users_page=1, stocks_page=1):
+def show_admin_page(notice=None):
     """The Administration page.
 
-    forms     what was typed into a form that had an error, so it can be shown again.
-    errors    the error messages. Both are keyed by the form's name: "add_user", "add_stock",
-              "schedule", "user-<id>" or "stock-<id>".
-    notice    a temporary password to show once: {"title": ..., "password": ...}.
-    editing   which Edit row to keep open (after an error in it).
+    notice   a temporary password to show once: {"title": ..., "password": ...}
     """
-    if forms is None:
-        forms = {}
-    if errors is None:
-        errors = {}
-
     schedule = market.get_schedule()
     status = market.get_status()
-
-    # The Trading Days and Market Control to show as chosen: what was just submitted if the
-    # Market Time form had an error, otherwise what is saved.
-    if "schedule" in forms:
-        chosen_days = set()
-        for day in forms["schedule"]["trading_days"]:
-            if day.isdigit():
-                chosen_days.add(int(day))
-        chosen_override = forms["schedule"]["market_override"]
-    else:
-        chosen_days = schedule["trading_days"]
-        chosen_override = schedule["override"]
-
-    user_page = make_page(User.query.order_by(User.name, User.user_id), users_page, ROWS_PER_PAGE)
-    stock_page = stock_list_page(stocks_page)
+    users = User.query.order_by(User.name, User.user_id).all()
+    # Listed stocks first, then delisted ones.
+    stock_query = Issuer.query.order_by(Issuer.is_listed.desc(), Issuer.symbol)
+    stocks = stock_query.all()
 
     html = render_template(
         "admin/index.html",
-        user_page=user_page,
-        user_page_numbers=user_page["numbers"],
-        stock_page=stock_page,
-        stock_page_numbers=stock_page["numbers"],
+        users=users,
+        stocks=stocks,
         schedule=schedule,
         weekday_names=DAY_NAMES,
-        chosen_days=chosen_days,
-        chosen_override=chosen_override,
         override_choices=MARKET_CONTROL_CHOICES,
         days_text=days_text,
         market_open=status["is_open"],
         market_state=market_state_text(status),
-        forms=forms,
-        errors=errors,
         notice=notice,
-        editing=editing,
         roles=ROLES,
         description_max=DESCRIPTION_MAX_LENGTH,
     )
@@ -301,43 +251,20 @@ def show_admin_page(forms=None, errors=None, notice=None, editing=None, users_pa
     return response
 
 
-def show_form_error(form_name, typed, error, editing=False):
-    """Show the Administration page again, with the form's error next to the right box.
-
-    form_name  which form had the error, like "add_user" or "user-7"
-    typed      what was typed into it, so it can be filled back in
-    editing    True for the Edit forms in the lists, which are folded away unless we open them
-    """
-    forms = {form_name: typed}
-    errors = {form_name: {error.field: error.message}}
-    pages = page_numbers_from(request.form)
-    editing_form = None
-    if editing:
-        editing_form = form_name
-    return show_admin_page(forms=forms, errors=errors, editing=editing_form,
-                           users_page=pages["users_page"], stocks_page=pages["stocks_page"])
-
-
-def page_numbers_from(form_or_url):
-    """Which page of the Users and Stocks lists was showing, so we can go back to it."""
-    return {
-        "users_page": form_or_url.get("users_page", 1, type=int),
-        "stocks_page": form_or_url.get("stocks_page", 1, type=int),
-    }
-
 
 def back_to_admin_page(section):
-    """Reload the Administration page at the same list pages, scrolled to `section`."""
-    pages = page_numbers_from(request.form)
-    return redirect(url_for("admin.index", users_page=pages["users_page"],
-                            stocks_page=pages["stocks_page"], _anchor=section))
+    """Reload the Administration page, scrolled to `section` ("users" or "stocks")."""
+    return redirect(url_for("admin.index", _anchor=section))
 
 
 @bp.get("/admin")
 @admin_required
 def index():
-    pages = page_numbers_from(request.args)
-    return show_admin_page(users_page=pages["users_page"], stocks_page=pages["stocks_page"])
+    return show_admin_page()
+
+
+# Every form on this page works the same way, like chapter 4 of the handbook: if something is
+# wrong, flash() the message (it shows in red at the top of the page) and reload the page.
 
 
 # --- Users -------------------------------------------------------------------------------------------
@@ -345,26 +272,23 @@ def index():
 @bp.post("/admin/users")
 @admin_required
 def add_user():
-    typed = {}
-    for field in ["name", "ssn", "email", "date_of_birth", "role", "access_level", "department"]:
-        typed[field] = request.form.get(field, "")
-
+    form = request.form
     try:
-        name = check_text(typed["name"], "name", "Full name")
-        ssn = check_digits(typed["ssn"], "ssn", SSN_PATTERN, "Enter the SSN as XXX-XX-XXXX.")
-        email = check_email(typed["email"])
-        date_of_birth = check_date_of_birth(typed["date_of_birth"])
+        name = check_text(form.get("name"), "name", "Full name")
+        ssn = check_digits(form.get("ssn"), "ssn", SSN_PATTERN, "Enter the SSN as XXX-XX-XXXX.")
+        email = check_email(form.get("email"))
+        date_of_birth = check_date_of_birth(form.get("date_of_birth"))
         admin_details = None
-        if typed["role"] == "Administrator":
-            access_level = check_text(typed["access_level"], "access_level", "Access level")
-            department = check_text(typed["department"], "department", "Department", required=False)
+        if form.get("role") == "Administrator":
+            access_level = check_text(form.get("access_level"), "access_level", "Access level")
+            department = check_text(form.get("department"), "department", "Department", required=False)
             admin_details = (access_level, department)
 
         password = make_temporary_password()
         create_user(name, ssn, email, date_of_birth, password, admin_details=admin_details)
     except UserError as error:
-        # The SSN box is never filled back in, so an SSN is never shown again.
-        return show_form_error("add_user", typed, error)
+        flash(error.message, "error")
+        return redirect(url_for("admin.index"))
 
     role = "Customer"
     if admin_details is not None:
@@ -378,24 +302,19 @@ def add_user():
 def edit_user(user_id):
     """Change a user's name, email and date of birth. The SSN and role can't be changed."""
     user = db.get_or_404(User, user_id)
-    typed = {
-        "name": request.form.get("name", ""),
-        "email": request.form.get("email", ""),
-        "date_of_birth": request.form.get("date_of_birth", ""),
-    }
-    form_name = f"user-{user_id}"
-
     try:
-        user.name = check_text(typed["name"], "name", "Full name")
-        user.email = check_email(typed["email"])
-        user.date_of_birth = check_date_of_birth(typed["date_of_birth"])
-        try:
-            db.session.commit()
-        except IntegrityError:
-            raise UserError("A user with this email already exists.", "email")
+        user.name = check_text(request.form.get("name"), "name", "Full name")
+        user.email = check_email(request.form.get("email"))
+        user.date_of_birth = check_date_of_birth(request.form.get("date_of_birth"))
+        db.session.commit()
     except UserError as error:
         db.session.rollback()  # forget the changes
-        return show_form_error(form_name, typed, error, editing=True)
+        flash(error.message, "error")
+        return back_to_admin_page("users")
+    except IntegrityError:
+        db.session.rollback()  # the database refused it: the email must be unique
+        flash("A user with this email already exists.", "error")
+        return back_to_admin_page("users")
 
     flash(f"Saved changes to {user.name}.", "success")
     return back_to_admin_page("users")
@@ -418,14 +337,12 @@ def issue_temporary_password(user_id):
     """For a forgotten password: replace it with a new temporary one, shown once."""
     user = db.get_or_404(User, user_id)
     password = make_temporary_password()
-    user.password_hash = hash_password(password)
+    user.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
     user.must_change_password = True
     db.session.commit()
 
     notice = {"title": f"New temporary password for {user.name} ({user.email}).", "password": password}
-    pages = page_numbers_from(request.form)
-    return show_admin_page(notice=notice, users_page=pages["users_page"],
-                           stocks_page=pages["stocks_page"])
+    return show_admin_page(notice=notice)
 
 
 # --- Stocks ------------------------------------------------------------------------------------------
@@ -433,25 +350,19 @@ def issue_temporary_password(user_id):
 @bp.post("/admin/stocks")
 @admin_required
 def add_stock():
-    typed = {}
-    for field in ["company_name", "symbol", "price", "shares", "exchange", "description"]:
-        typed[field] = request.form.get(field, "")
-    random_history = request.form.get("randomize_history") == "on"
-
+    form = request.form
+    random_history = form.get("randomize_history") == "on"
     try:
-        company_name = check_text(typed["company_name"], "company_name", "Stock name")
-        description = check_text(typed["description"], "description", "Description", required=False)
-        exchange = check_text(typed["exchange"], "exchange", "Exchange", required=False)
-        symbol = check_symbol(typed["symbol"])
-        price = parse_money(typed["price"], "price")
-        shares = parse_shares(typed["shares"], "shares")
+        company_name = check_text(form.get("company_name"), "company_name", "Stock name")
+        description = check_text(form.get("description"), "description", "Description", required=False)
+        exchange = check_text(form.get("exchange"), "exchange", "Exchange", required=False)
+        symbol = check_symbol(form.get("symbol"))
+        price = parse_money(form.get("price"), "price")
+        shares = parse_shares(form.get("shares"), "shares")
         create_stock(company_name, symbol, price, shares, description, exchange, random_history)
     except UserError as error:
-        if random_history:
-            typed["randomize_history"] = "on"
-        else:
-            typed["randomize_history"] = ""
-        return show_form_error("add_stock", typed, error)
+        flash(error.message, "error")
+        return redirect(url_for("admin.index"))
 
     if random_history:
         flash(f"Stock {symbol} added with a year of price history. It can be traded now.", "success")
@@ -465,23 +376,14 @@ def add_stock():
 def edit_stock(issuer_id):
     """Change a stock's name, description and exchange. The symbol and price can't be changed."""
     stock = db.get_or_404(Issuer, issuer_id)
-    typed = {
-        "company_name": request.form.get("company_name", ""),
-        "description": request.form.get("description", ""),
-        "exchange": request.form.get("exchange", ""),
-    }
-    form_name = f"stock-{issuer_id}"
-
+    form = request.form
     try:
-        company_name = check_text(typed["company_name"], "company_name", "Stock name")
-        description = check_text(typed["description"], "description", "Description", required=False)
-        exchange = check_text(typed["exchange"], "exchange", "Exchange", required=False)
+        stock.company_name = check_text(form.get("company_name"), "company_name", "Stock name")
     except UserError as error:
-        return show_form_error(form_name, typed, error, editing=True)
-
-    stock.company_name = company_name
-    stock.description = description
-    stock.exchange = exchange
+        flash(error.message, "error")
+        return back_to_admin_page("stocks")
+    stock.description = check_text(form.get("description"), "description", "Description", required=False)
+    stock.exchange = check_text(form.get("exchange"), "exchange", "Exchange", required=False)
     db.session.commit()
     flash(f"Saved changes to {stock.symbol}.", "success")
     return back_to_admin_page("stocks")
@@ -512,26 +414,23 @@ def check_time(typed, field, label):
 @bp.post("/admin/market-schedule")
 @admin_required
 def save_schedule():
-    typed = {
-        "open_time": request.form.get("open_time", ""),
-        "close_time": request.form.get("close_time", ""),
-        "trading_days": request.form.getlist("trading_days"),  # one value per ticked box
-        "market_override": request.form.get("market_override", market.FOLLOW_SCHEDULE),
-    }
+    form = request.form
+    ticked_days = form.getlist("trading_days")  # one value per ticked box: "0" for Monday ... "6" for Sunday
     try:
-        open_time = check_time(typed["open_time"], "open_time", "open time")
-        close_time = check_time(typed["close_time"], "close_time", "close time")
+        open_time = check_time(form.get("open_time"), "open_time", "open time")
+        close_time = check_time(form.get("close_time"), "close_time", "close time")
         if close_time <= open_time:
             raise UserError("Close time must be after open time.", "close_time")
 
         days = set()
         for day in range(7):
-            if str(day) in typed["trading_days"]:
+            if str(day) in ticked_days:
                 days.add(day)
         if len(days) == 0:
             raise UserError("Select at least one trading day.", "trading_days")
     except UserError as error:
-        return show_form_error("schedule", typed, error)
+        flash(error.message, "error")
+        return redirect(url_for("admin.index"))
 
     # Save the days as one number (see MarketSchedule in models.py): day n adds 2 to the power n.
     days_number = 0
@@ -539,7 +438,7 @@ def save_schedule():
         days_number += 2 ** day
 
     # Anything other than Force open or Force closed means "follow the schedule".
-    override = typed["market_override"]
+    override = form.get("market_override")
     if override != market.FORCE_OPEN and override != market.FORCE_CLOSED:
         override = market.FOLLOW_SCHEDULE
 

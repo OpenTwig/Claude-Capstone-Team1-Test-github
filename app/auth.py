@@ -25,20 +25,6 @@ PASSWORD_MIN_LENGTH = 12
 PASSWORD_MAX_BYTES = 72  # bcrypt can't hash passwords longer than this
 
 
-# --- Passwords ---------------------------------------------------------------------------------------
-
-def hash_password(password):
-    """The bcrypt hash of a password. We store this, never the password itself."""
-    return bcrypt.generate_password_hash(password).decode("utf-8")
-
-
-def password_matches(stored_hash, typed_password):
-    """True if the typed password is the one that `stored_hash` was made from."""
-    if len(typed_password.encode()) > PASSWORD_MAX_BYTES:
-        return False  # too long for bcrypt, so it can't be anyone's password
-    return bcrypt.check_password_hash(stored_hash, typed_password)
-
-
 def password_problem(password):
     """What is wrong with a new password, or None if it is fine."""
     if len(password) < PASSWORD_MIN_LENGTH:
@@ -125,18 +111,12 @@ def signin():
     error = None
 
     if request.method == "POST":
-        typed_password = request.form.get("password", "")
         user = User.query.filter_by(email=email).first()
-
-        if user is not None and user.is_active and password_matches(user.password_hash, typed_password):
+        password = request.form.get("password", "")
+        # check_password_hash hashes the typed password and compares it with the stored hash.
+        if user and user.is_active and bcrypt.check_password_hash(user.password_hash, password):
             session.clear()  # start a fresh session
-
-            # "Stay signed in" keeps the login after the browser closes. Not for temporary passwords.
-            remember = request.form.get("stay_signed_in") is not None
-            if user.must_change_password:
-                remember = False
-
-            login_user(user, remember=remember)
+            login_user(user)
             return redirect(landing_page(user))
 
         # The same message whether the email or the password was wrong,
@@ -161,10 +141,11 @@ def change_password():
             errors["new_password"] = password_problem(new_password)
         elif new_password != confirm_password:
             errors["confirm_password"] = "The two passwords don't match."
-        elif password_matches(current_user.password_hash, new_password):
+        elif bcrypt.check_password_hash(current_user.password_hash, new_password):
             errors["new_password"] = "Choose a password different from your temporary one."
         else:
-            current_user.password_hash = hash_password(new_password)
+            # Store only the hash, never the password itself.
+            current_user.password_hash = bcrypt.generate_password_hash(new_password).decode("utf-8")
             current_user.must_change_password = False
             db.session.commit()
             flash("Your password has been changed.", "success")

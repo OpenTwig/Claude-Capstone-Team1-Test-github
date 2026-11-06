@@ -19,9 +19,9 @@
 }
 
 /* The light/dark button: the sun shows in dark mode (click for light), the moon in light mode. */
-.theme-icon {
-  width: 1.25rem;
-  height: 1.25rem;
+.theme-icon-sun,
+.theme-icon-moon {
+  font-size: 1.25rem; /* Bootstrap Icons are letters in a font, so font-size sets their size */
 }
 
 [data-bs-theme="dark"] .theme-icon-moon,

@@ -12,7 +12,7 @@
     <h2 class="h4 mb-1">{{ stock.company_name }} ({{ stock.symbol }})</h2>
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
       <p class="fs-5 mb-0">
-        <span class="fw-semibold">{{ stock.price | money }}</span> {{ change(stock.change, stock.change_pct) }}
+        <span class="fw-semibold">{{ stock.current_price | money }}</span> {{ change(stock.change, stock.change_pct) }}
       </p>
       {% if not current_user.is_admin %}
         <a class="btn btn-primary" href="{{ url_for('trade.trade_page', symbol=stock.symbol) }}">Trade</a>
@@ -33,19 +33,19 @@
           </tr>
           <tr>
             <th class="fw-normal text-body-secondary">Open</th>
-            <td class="text-end">{{ detail.open_price | money }}</td>
+            <td class="text-end">{{ open_price | money }}</td>
           </tr>
-          {% if detail.exchange %}
+          {% if stock.exchange %}
             <tr>
               <th class="fw-normal text-body-secondary">Exchange</th>
-              <td class="text-end">{{ detail.exchange }}</td>
+              <td class="text-end">{{ stock.exchange }}</td>
             </tr>
           {% endif %}
         </table>
       </div>
       <div class="col-sm-6">
         <h3 class="h6">Stock Description</h3>
-        <p class="small text-body-secondary mb-0">{{ detail.description or "No description yet." }}</p>
+        <p class="small text-body-secondary mb-0">{{ stock.description or "No description yet." }}</p>
       </div>
     </div>
   </section>

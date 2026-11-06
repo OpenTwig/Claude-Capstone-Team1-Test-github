@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import change %}
-{% from "_pager.html" import pager %}
 {% block title %}History · Stock Trading System{% endblock %}
-
-{# The address of page `number` of the list. Used by the page links at the bottom. #}
-{% macro link_to_page(number) %}
-  {{- url_for('history.history_page', page=number) -}}
-{% endmacro %}
 
 {% block content %}
   <h1 class="h3 mb-3">Transaction History</h1>
@@ -57,7 +51,5 @@
         </tbody>
       </table>
     </div>
-
-    {{ pager(page, link_to_page) }}
   {% endif %}
 {% endblock %}
