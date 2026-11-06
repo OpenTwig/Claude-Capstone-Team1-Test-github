@@ -16,23 +16,42 @@ Needs Python 3.11+ and MySQL 8 or MariaDB 10.5+.
 
 2. Install and configure:
 
+   Linux/macOS:
+
    ```bash
    python -m venv .venv
    .venv/bin/python -m pip install -r requirements.txt
    cp .env.example .env        # then fill it in (it explains how to generate the keys)
    ```
 
+   Windows:
+   
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   Copy-Item .env.example .env        # then fill it in (it explains how to generate the keys)
+   ```
+
    Put the first administrator's email and password in `.env` as `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
    The first time the site starts, it creates the tables and that administrator. Log in as them to add
    stocks and customers on the Administration page.
 
-3. Run the site at http://127.0.0.1:5000, and (in a second terminal) the price generator:
+4. Run the site at http://127.0.0.1:5000, and (in a second terminal) the price generator:
+
+   Linux/macOS:
 
    ```bash
    .venv/bin/python -m flask --app app run --debug
    .venv/bin/python price_generator.py
    ```
 
+   Windows:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m flask --app app run --debug
+   .\.venv\Scripts\python.exe price_generator.py
+   ```
+   
 ## Code
 
 Each page has one Python file in `app/` and its templates in `app/templates/<name>/`:
