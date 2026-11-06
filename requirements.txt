@@ -7,3 +7,4 @@ PyMySQL==1.2.3
 SQLAlchemy==2.1.8
 cryptography==50.0.1
 python-dotenv==1.2.3
+tzdata==2026.6
